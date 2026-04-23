@@ -122,6 +122,16 @@ BeanPostProcessor 逻辑不变，自动注入不受影响。
 
 返回结果中携带 businessId，便于调用方追踪。
 
+## 使用约束
+
+- **方法形参不超过 4 个** — 所有方法（含 Builder 链式方法、构造函数）严格遵守
+  - `StateMachine` 构造函数现有 6 个参数，改为包私有静态参数类承载
+  - `State` 构造函数现有 2 个参数，增加 `suspended` 后为 3 个，不受影响
+  - Record 类型（如 `InstanceRecord`、`SnapshotRecord`）为数据载体，不受此限制
+- **禁止使用 Map 形式的 Context** — 删除 `Context` 类，用户必须定义具体的 POJO Context 类
+  - `StateMachineBuilder.contextClass()` 变为必需方法，构建时不传则抛异常
+  - `StateMachine.deserialize` 移除 fallback 到 `Context.class` 的兼容代码
+
 ## 前端标识
 
 `ConsoleController` 返回状态列表时，每个 State 携带 `suspended` 布尔属性。前端读取定义数据后可据此对挂起点节点做特殊标识（如红色边框、暂停图标等）。
@@ -129,16 +139,25 @@ BeanPostProcessor 逻辑不变，自动注入不受影响。
 ## 使用示例
 
 ```java
+// 用户自定义 Context（强类型，非 Map）
+public class OrderContext {
+    private String orderId;
+    private int stock;
+    private boolean paymentSuccess;
+    private boolean approved;
+    // getters/setters
+}
+
 @Bean
 public StateMachine<OrderContext> orderMachine() {
     return StateMachineBuilder.<OrderContext>builder("order-process")
-        .contextClass(OrderContext.class)
+        .contextClass(OrderContext.class)  // 必需
         .state("check-inventory", this::checkInventory)
         .state("process-payment", this::processPayment)
         .suspendState("wait-approval", ctx -> {})  // 挂起点：等待审批
         .state("ship-order", this::shipOrder)
         .transition("check-inventory", "process-payment", ctx -> ctx.getStock() > 0)
-        .transition("process-payment", "wait-approval", ctx -> ctx.getPaymentSuccess())
+        .transition("process-payment", "wait-approval", ctx -> ctx.isPaymentSuccess())
         .transition("wait-approval", "ship-order", ctx -> ctx.isApproved())
         .build();
 }
@@ -147,7 +166,7 @@ public StateMachine<OrderContext> orderMachine() {
 String instanceId = machine.execute(context);
 
 // 恢复（通过 businessId）
-machine.resumeByBusinessId("ORDER-20260423-001", ctx -> ctx.put("approved", true));
+machine.resumeByBusinessId("ORDER-20260423-001", ctx -> ctx.setApproved(true));
 
 // 恢复（通过 instanceId）
 machine.resumeByInstanceId("some-uuid", ctx -> ctx.setApproved(true));
