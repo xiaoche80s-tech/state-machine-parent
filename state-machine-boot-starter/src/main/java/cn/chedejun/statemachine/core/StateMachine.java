@@ -44,7 +44,7 @@ public class StateMachine<C> {
         String instanceId = instanceRepository.create(new cn.chedejun.statemachine.persistence.InstanceRepository.CreateInstanceParams(definitionId, name, version, currentState));
         executeLoop(instanceId, context, currentState, targetState);
         var record = instanceRepository.findById(instanceId).orElseThrow();
-        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), record.createdAt());
+        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), record.businessId(), record.createdAt());
     }
 
     public void retry(String instanceId, C context) {
