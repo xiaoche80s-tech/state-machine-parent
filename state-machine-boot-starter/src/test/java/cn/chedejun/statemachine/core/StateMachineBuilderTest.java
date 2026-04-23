@@ -118,4 +118,21 @@ class StateMachineBuilderTest {
         assertEquals("COMPLETED", result.status());
         assertEquals("step3", result.currentState());
     }
+
+    @Test
+    void state_defaultNotSuspended() {
+        StateMachine<Context> m = StateMachineBuilder.<Context>builder("suspended-test")
+            .state("normal", ctx -> {})
+            .suspendState("suspend-point", ctx -> {})
+            .retryPolicy(RetryPolicy.none())
+            .jdbcTemplate(jdbcTemplate).build();
+
+        State<Context> normal = m.getStates().stream()
+            .filter(s -> s.getName().equals("normal")).findFirst().orElseThrow();
+        State<Context> suspended = m.getStates().stream()
+            .filter(s -> s.getName().equals("suspend-point")).findFirst().orElseThrow();
+
+        assertFalse(normal.isSuspended());
+        assertTrue(suspended.isSuspended());
+    }
 }
