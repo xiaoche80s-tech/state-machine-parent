@@ -12,11 +12,18 @@ public class InstanceRepository {
     private final JdbcTemplate jdbcTemplate;
     public InstanceRepository(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
 
-    public String create(String definitionId, String machineName, String definitionVersion, String initialState) {
+    /** 创建实例的参数 */
+    public record CreateInstanceParams(String definitionId, String machineName, String definitionVersion, String initialState, String businessId) {
+        public CreateInstanceParams(String definitionId, String machineName, String definitionVersion, String initialState) {
+            this(definitionId, machineName, definitionVersion, initialState, null);
+        }
+    }
+
+    public String create(CreateInstanceParams params) {
         String id = UUID.randomUUID().toString();
         jdbcTemplate.update(
-            "INSERT INTO state_machine_instances (id, definition_id, machine_name, definition_version, current_state, status) VALUES (?, ?, ?, ?, ?, 'RUNNING')",
-            id, definitionId, machineName, definitionVersion, initialState);
+            "INSERT INTO state_machine_instances (id, definition_id, machine_name, definition_version, current_state, business_id, status) VALUES (?, ?, ?, ?, ?, ?, 'RUNNING')",
+            id, params.definitionId(), params.machineName(), params.definitionVersion(), params.initialState(), params.businessId());
         return id;
     }
 
@@ -25,8 +32,32 @@ public class InstanceRepository {
         catch (Exception e) { return Optional.empty(); }
     }
 
+    public Optional<InstanceRecord> findByBusinessId(String machineName, String businessId) {
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject(
+                "SELECT * FROM state_machine_instances WHERE machine_name = ? AND business_id = ? ORDER BY created_at DESC LIMIT 1",
+                rowMapper(), machineName, businessId));
+        } catch (Exception e) { return Optional.empty(); }
+    }
+
+    /**
+     * 原子地将 SUSPENDED 实例标记为 RUNNING。
+     * 返回 1 表示成功，返回 0 表示实例不是 SUSPENDED 状态（并发保护）。
+     */
+    public int tryMarkRunningFromSuspended(String id) {
+        return jdbcTemplate.update(
+            "UPDATE state_machine_instances SET status = 'RUNNING', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'SUSPENDED'",
+            id);
+    }
+
     public void updateState(String id, String currentState, String status, String errorMessage) {
         jdbcTemplate.update("UPDATE state_machine_instances SET current_state = ?, status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", currentState, status, errorMessage, id);
+    }
+
+    public void markSuspended(String id, String currentState) {
+        jdbcTemplate.update(
+            "UPDATE state_machine_instances SET current_state = ?, status = 'SUSPENDED', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            currentState, id);
     }
 
     public void incrementRetry(String id, int retryCount, Instant nextRetryAt) {
@@ -51,15 +82,16 @@ public class InstanceRepository {
     }
 
     private RowMapper<InstanceRecord> rowMapper() {
-        return (rs,  rowNum) -> new InstanceRecord(
+        return (rs, rowNum) -> new InstanceRecord(
             rs.getString("id"), rs.getString("definition_id"), rs.getString("machine_name"),
             rs.getString("definition_version"), rs.getString("current_state"),
+            rs.getString("business_id"),
             rs.getString("status"), rs.getInt("retry_count"),
             rs.getTimestamp("next_retry_at") != null ? rs.getTimestamp("next_retry_at").toInstant() : null,
             rs.getString("error_message"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant());
     }
 
     public record InstanceRecord(String id, String definitionId, String machineName, String definitionVersion,
-            String currentState, String status, int retryCount,
+            String currentState, String businessId, String status, int retryCount,
             Instant nextRetryAt, String errorMessage, Instant createdAt, Instant updatedAt) {}
 }

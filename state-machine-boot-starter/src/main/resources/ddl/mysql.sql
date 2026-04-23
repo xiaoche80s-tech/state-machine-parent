@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS state_machine_definitions (
 );
 CREATE TABLE IF NOT EXISTS state_machine_instances (
     id VARCHAR(64) PRIMARY KEY, definition_id VARCHAR(64), machine_name VARCHAR(128) NOT NULL,
-    definition_version VARCHAR(32), current_state VARCHAR(64),
+    definition_version VARCHAR(32), current_state VARCHAR(64), business_id VARCHAR(128),
     status VARCHAR(16) NOT NULL DEFAULT 'RUNNING', retry_count INT DEFAULT 0,
     next_retry_at TIMESTAMP NULL, error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

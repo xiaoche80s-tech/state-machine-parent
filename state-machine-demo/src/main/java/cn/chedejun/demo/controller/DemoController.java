@@ -72,44 +72,39 @@ public class DemoController {
     }
 
     /**
-     * 触发订单流程（指定停止状态）
-     * 用于验证 REACHED 与 COMPLETED 的区别
+     * 恢复挂起的订单实例
+     * 用于演示 suspendState 用法：当状态机在挂起点暂停后，可通过此接口恢复
      */
-    @PostMapping("/order/step")
-    public Map<String, Object> createOrderToState(@RequestBody Map<String, Object> params) {
-        String orderId = UUID.randomUUID().toString().substring(0, 8);
-        int stock = (int) params.getOrDefault("stock", 10);
-        double amount = ((Number) params.getOrDefault("amount", 99.99)).doubleValue();
-        String address = (String) params.getOrDefault("address", "北京市朝阳区");
-        String targetState = (String) params.get("targetState");
+    @PostMapping("/order/resume")
+    public Map<String, Object> resumeOrder(@RequestBody Map<String, Object> params) {
+        String businessId = (String) params.get("businessId");
+        String expectedCurrentState = (String) params.get("expectedCurrentState");
+        String shippingAddress = (String) params.get("shippingAddress");
 
-        OrderContext ctx = new OrderContext(orderId, stock, amount);
-        ctx.setShippingAddress(address);
+        if (businessId == null || businessId.isBlank()) {
+            return Map.of("success", false, "message", "缺少 businessId 参数");
+        }
+        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
+        }
 
         try {
-            ExecuteResult result;
-            if (targetState != null && !targetState.isBlank()) {
-                result = orderMachine.execute(ctx, targetState);
-            } else {
-                result = orderMachine.execute(ctx);
-            }
+            orderMachine.resumeByBusinessId("order-process", businessId, expectedCurrentState, ctx -> {
+                if (shippingAddress != null && !shippingAddress.isBlank()) {
+                    ctx.setShippingAddress(shippingAddress);
+                }
+            });
+            // resumeByBusinessId 内部会更新实例状态，返回成功即可
             return Map.of(
                 "success", true,
-                "orderId", orderId,
-                "instanceId", result.instanceId(),
-                "status", result.status(),
-                "currentState", result.currentState(),
-                "message", "REACHED".equals(result.status()) ? "停在 " + result.currentState() + "，后续还有状态" : "订单执行完成"
+                "businessId", businessId,
+                "message", "订单已恢复执行，请查询 /demo/orders 查看最新状态"
             );
         } catch (StateMachineException e) {
-            var instances = instanceRepository.findByMachineName("order-process", 0, 1);
-            String instanceId = instances.isEmpty() ? "unknown" : instances.get(0).id();
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
-                "orderId", orderId,
-                "instanceId", instanceId,
                 "status", "FAILED",
                 "message", e.getMessage(),
                 "stackTrace", sw.toString()
@@ -208,40 +203,42 @@ public class DemoController {
     }
 
     /**
-     * 触发出库流程（指定停止状态）
+     * 恢复挂起的出库实例
+     * 用于演示 suspendState 用法：当状态机在挂起点暂停后，可通过此接口恢复
      */
-    @PostMapping("/outbound/step")
-    public Map<String, Object> createOutboundToState(@RequestBody Map<String, Object> params) {
-        String outboundNo = "OB-" + UUID.randomUUID().toString().substring(0, 8);
-        String warehouseCode = (String) params.getOrDefault("warehouseCode", "WH01");
-        int totalQty = (int) params.getOrDefault("totalQty", 100);
-        String carrierCode = (String) params.getOrDefault("carrierCode", "SF");
-        String targetState = (String) params.get("targetState");
+    @PostMapping("/outbound/resume")
+    public Map<String, Object> resumeOutbound(@RequestBody Map<String, Object> params) {
+        String businessId = (String) params.get("businessId");
+        String expectedCurrentState = (String) params.get("expectedCurrentState");
+        String carrierCode = (String) params.get("carrierCode");
 
-        OutboundContext ctx = new OutboundContext(outboundNo, warehouseCode, totalQty);
-        ctx.setCarrierCode(carrierCode);
+        if (businessId == null || businessId.isBlank()) {
+            return Map.of("success", false, "message", "缺少 businessId 参数");
+        }
+        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
+        }
 
         try {
-            ExecuteResult result = (targetState != null && !targetState.isBlank())
-                ? outboundMachine.execute(ctx, targetState)
-                : outboundMachine.execute(ctx);
+            outboundMachine.resumeByBusinessId("outbound-process", businessId, expectedCurrentState, ctx -> {
+                if (carrierCode != null && !carrierCode.isBlank()) {
+                    ctx.setCarrierCode(carrierCode);
+                }
+            });
+            // resumeByBusinessId 内部会更新实例状态，返回成功即可
             return Map.of(
                 "success", true,
-                "outboundNo", outboundNo,
-                "instanceId", result.instanceId(),
-                "status", result.status(),
-                "currentState", result.currentState(),
-                "message", "REACHED".equals(result.status()) ? "停在 " + result.currentState() + "，后续还有状态" : "出库执行完成"
+                "businessId", businessId,
+                "message", "出库已恢复执行，请查询 /demo/outbounds 查看最新状态"
             );
         } catch (StateMachineException e) {
-            var instances = instanceRepository.findByMachineName("outbound-process", 0, 1);
-            String instanceId = instances.isEmpty() ? "unknown" : instances.get(0).id();
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
-                "outboundNo", outboundNo,
-                "instanceId", instanceId,
                 "status", "FAILED",
-                "message", e.getMessage()
+                "message", e.getMessage(),
+                "stackTrace", sw.toString()
             );
         }
     }

@@ -5,8 +5,10 @@ import cn.chedejun.statemachine.persistence.DefinitionRepository;
 import cn.chedejun.statemachine.persistence.InstanceRepository;
 import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
+
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Consumer;
 
 public class StateMachine<C> {
 
@@ -34,17 +36,62 @@ public class StateMachine<C> {
         this.contextClass = contextClass;
     }
 
-    public ExecuteResult execute(C context) { return execute(context, null, null); }
-    public ExecuteResult execute(C context, String targetState) { return execute(context, null, targetState); }
+    public ExecuteResult execute(C context) {
+        return execute(context, null);
+    }
 
-    public ExecuteResult execute(C context, String startState, String targetState) {
+    public ExecuteResult execute(C context, String businessId) {
         ensureInitialized();
-        String currentState = startState != null ? startState : states.get(0).getName();
+        String currentState = states.get(0).getName();
         String definitionId = resolveDefinitionId();
-        String instanceId = instanceRepository.create(definitionId, name, version, currentState);
-        executeLoop(instanceId, context, currentState, targetState);
+        String instanceId = instanceRepository.create(new InstanceRepository.CreateInstanceParams(definitionId, name, version, currentState, businessId));
+        executeLoop(instanceId, context, currentState);
         var record = instanceRepository.findById(instanceId).orElseThrow();
-        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), record.createdAt());
+        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), businessId, record.createdAt());
+    }
+
+    /** 通过业务 ID 恢复挂起的实例 */
+    public void resumeByBusinessId(String stateMachineName, String businessId, String expectedCurrentState, Consumer<C> contextMerger) {
+        var instance = instanceRepository.findByBusinessId(stateMachineName, businessId)
+            .orElseThrow(() -> new StateMachineException("Instance not found for stateMachine=" + stateMachineName + ", businessId=" + businessId));
+        resumeInstance(instance, expectedCurrentState, contextMerger);
+    }
+
+    /** 通过状态机实例 ID 恢复挂起的实例 */
+    public void resumeByInstanceId(String instanceId, String expectedCurrentState, Consumer<C> contextMerger) {
+        var instance = instanceRepository.findById(instanceId)
+            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        resumeInstance(instance, expectedCurrentState, contextMerger);
+    }
+
+    private void resumeInstance(InstanceRepository.InstanceRecord instance, String expectedCurrentState, Consumer<C> contextMerger) {
+        if (!instance.currentState().equals(expectedCurrentState))
+            throw new StateMachineException(String.format("State mismatch: expected '%s', actual '%s'", expectedCurrentState, instance.currentState()));
+
+        // 原子地将 SUSPENDED 切换为 RUNNING，返回 0 说明已被其他线程 resume
+        int updated = instanceRepository.tryMarkRunningFromSuspended(instance.id());
+        if (updated == 0)
+            throw new StateMachineException("Instance already resumed or not suspended: " + instance.id());
+
+        // 从最新快照恢复 context
+        var snapshots = snapshotRepository.findByInstanceId(instance.id());
+        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
+        C context = deserialize(contextJson != null ? contextJson : "{}");
+        if (context == null)
+            throw new StateMachineException("Failed to deserialize context for instance: " + instance.id());
+
+        // 应用 context 修改
+        contextMerger.accept(context);
+
+        // 恢复执行：先从挂起点找到下一状态，再继续执行循环
+        Optional<String> nextState = findNextState(context, instance.currentState());
+        if (nextState.isPresent()) {
+            instanceRepository.updateState(instance.id(), nextState.get(), "RUNNING", null);
+            instanceRepository.setRetryCount(instance.id(), 0);
+            executeLoop(instance.id(), context, nextState.get());
+        } else {
+            instanceRepository.updateState(instance.id(), instance.currentState(), "COMPLETED", null);
+        }
     }
 
     public void retry(String instanceId, C context) {
@@ -55,7 +102,7 @@ public class StateMachine<C> {
             throw new StateMachineException("Can only retry FAILED instances, current status: " + instance.status());
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
         instanceRepository.setRetryCount(instanceId, 0);
-        executeLoop(instanceId, context, instance.currentState(), null);
+        executeLoop(instanceId, context, instance.currentState());
     }
 
     /**
@@ -75,12 +122,12 @@ public class StateMachine<C> {
 
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
         instanceRepository.setRetryCount(instanceId, 0);
-        executeLoop(instanceId, context, instance.currentState(), null);
+        executeLoop(instanceId, context, instance.currentState());
     }
 
     // ===== 核心执行循环（execute 和 retry 共享） =====
 
-    private void executeLoop(String instanceId, C context, String startState, String targetState) {
+    private void executeLoop(String instanceId, C context, String startState) {
         String currentState = startState;
         int maxIterations = states.size() * (retryPolicy.getMaxAttempts() + 1) + 1;
         int iteration = 0;
@@ -115,12 +162,9 @@ public class StateMachine<C> {
                     String.format("State '%s' failed after %d attempts: %s", currentState, retryCount + 1, e.getMessage()), e);
             }
 
-            if (targetState != null && currentState.equals(targetState)) {
-                if (findNextState(context, currentState).isEmpty()) {
-                    instanceRepository.updateState(instanceId, currentState, "COMPLETED", null);
-                } else {
-                    instanceRepository.updateState(instanceId, currentState, "REACHED", null);
-                }
+            // 挂起点检查：在 Action 执行成功后，查找下一状态之前
+            if (state.isSuspended()) {
+                instanceRepository.markSuspended(instanceId, currentState);
                 return;
             }
 
@@ -154,10 +198,11 @@ public class StateMachine<C> {
 
     @SuppressWarnings("unchecked")
     private C deserialize(String json) {
-        try { return objectMapper.readValue(json, contextClass); } catch (Exception e) {
+        try { return (C) objectMapper.readValue(json, contextClass); } catch (Exception e) {
             try { return (C) objectMapper.readValue(json, Context.class); } catch (Exception e2) { return null; }
         }
     }
+
     private String resolveDefinitionId() {
         if (registry != null) return registry.getVersions(name).stream()
             .filter(v -> v.version().equals(version)).findFirst()
