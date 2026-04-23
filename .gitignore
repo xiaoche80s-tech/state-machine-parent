@@ -56,6 +56,9 @@ bin/
 
 # OS generated files
 .DS_Store
+
+# Worktrees
+.worktrees/
 .DS_Store?
 ._*
 .Spotlight-V100
