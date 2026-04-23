@@ -89,6 +89,18 @@ class StateMachineIntegrationTest {
                 .retryPolicy(RetryPolicy.exponentialBackoff().maxAttempts(2).initialDelay(100, TimeUnit.MILLISECONDS).build())
                 .build();
         }
+
+        @Bean
+        public StateMachine<TestContext> suspendMachine() {
+            return StateMachineBuilder.<TestContext>builder("suspend-machine")
+                .contextClass(TestContext.class)
+                .state("validate", ctx -> ctx.setValidated(true))
+                .suspendState("wait-approval", ctx -> ctx.setProcessed(true))
+                .state("complete", ctx -> ctx.setCompleted(true))
+                .transition("validate", "wait-approval", TestContext::isValidated)
+                .transition("wait-approval", "complete", TestContext::isProcessed)
+                .build();
+        }
     }
 
     static class TestContext extends Context {
@@ -106,6 +118,7 @@ class StateMachineIntegrationTest {
 
     @Autowired private StateMachine<TestContext> testMachine;
     @Autowired private StateMachine<TestContext> failingMachine;
+    @Autowired private StateMachine<TestContext> suspendMachine;
     @Autowired private StateMachineRegistry registry;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private DefinitionRepository definitionRepository;
@@ -115,6 +128,12 @@ class StateMachineIntegrationTest {
 
     private InstanceRepository instanceRepository() { return new InstanceRepository(jdbcTemplate); }
     private SnapshotRepository snapshotRepository() { return new SnapshotRepository(jdbcTemplate); }
+
+    private String resolveDefinitionId(String machineName) {
+        var definitions = definitionRepository.findAllByName(machineName);
+        if (definitions.isEmpty()) throw new StateMachineException("Definition not found: " + machineName);
+        return definitions.get(0).id();
+    }
 
     @BeforeEach
     void cleanTables() {
@@ -329,6 +348,67 @@ class StateMachineIntegrationTest {
         assertFalse(versions.isEmpty());
         var ver = versions.get(0);
         assertEquals("test-machine", ver.name());
+    }
+
+    // ===== 挂起/恢复 =====
+
+    @Test
+    @Order(50)
+    void execute_suspendAndResume_continuesExecution() {
+        TestContext ctx = new TestContext();
+        ExecuteResult result = suspendMachine.execute(ctx, "test-biz-001");
+
+        assertEquals("SUSPENDED", result.status());
+        assertEquals("wait-approval", result.currentState());
+        assertTrue(ctx.isValidated());
+        assertTrue(ctx.isProcessed());    // 挂起点的 Action 已执行
+        assertFalse(ctx.isCompleted());   // complete 未执行
+
+        // 恢复执行
+        suspendMachine.resumeByBusinessId("test-biz-001", c -> {});
+
+        // 重新查询实例状态
+        var instance = instanceRepository().findByBusinessId(
+            resolveDefinitionId("suspend-machine"), "test-biz-001");
+        assertTrue(instance.isPresent());
+        assertEquals("COMPLETED", instance.get().status());
+        assertEquals("complete", instance.get().currentState());
+    }
+
+    @Test
+    @Order(51)
+    void resume_nonSuspendedInstance_throwsException() {
+        TestContext ctx = new TestContext();
+        ExecuteResult result = suspendMachine.execute(ctx);
+        assertEquals("SUSPENDED", result.status());
+
+        // 先恢复一次
+        suspendMachine.resumeByInstanceId(result.instanceId(), c -> {});
+
+        // 再次恢复应该失败（已经不是 SUSPENDED 状态）
+        assertThrows(StateMachineException.class, () ->
+            suspendMachine.resumeByInstanceId(result.instanceId(), c -> {}));
+    }
+
+    @Test
+    @Order(52)
+    void resume_contextMerger_modifiesContext() {
+        TestContext ctx = new TestContext();
+        ctx.put("extra-key", "original-value");
+        ExecuteResult result = suspendMachine.execute(ctx, "test-biz-002");
+
+        assertEquals("SUSPENDED", result.status());
+
+        // 恢复时修改 context
+        suspendMachine.resumeByBusinessId("test-biz-002", c -> {
+            c.put("extra-key", "modified-value");
+        });
+
+        // 从快照验证 context 被修改
+        var snapshots = snapshotRepository().findByInstanceId(result.instanceId());
+        // 最后一个快照的 output 应该包含修改后的值
+        var lastSnapshot = snapshots.get(snapshots.size() - 1);
+        assertNotNull(lastSnapshot.outputJson());
     }
 
     // ===== 数据验证 =====

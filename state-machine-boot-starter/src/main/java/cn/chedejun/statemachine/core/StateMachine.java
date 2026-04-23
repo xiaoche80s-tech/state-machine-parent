@@ -77,10 +77,15 @@ public class StateMachine<C> {
         // 应用 context 修改
         contextMerger.accept(context);
 
-        // 恢复执行
-        instanceRepository.updateState(instance.id(), instance.currentState(), "RUNNING", null);
-        instanceRepository.setRetryCount(instance.id(), 0);
-        executeLoop(instance.id(), context, instance.currentState());
+        // 恢复执行：先从挂起点找到下一状态，再继续执行循环
+        Optional<String> nextState = findNextState(context, instance.currentState());
+        if (nextState.isPresent()) {
+            instanceRepository.updateState(instance.id(), nextState.get(), "RUNNING", null);
+            instanceRepository.setRetryCount(instance.id(), 0);
+            executeLoop(instance.id(), context, nextState.get());
+        } else {
+            instanceRepository.updateState(instance.id(), instance.currentState(), "COMPLETED", null);
+        }
     }
 
     public void retry(String instanceId, C context) {
