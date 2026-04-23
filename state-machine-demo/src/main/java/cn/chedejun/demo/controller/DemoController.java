@@ -78,14 +78,18 @@ public class DemoController {
     @PostMapping("/order/resume")
     public Map<String, Object> resumeOrder(@RequestBody Map<String, Object> params) {
         String businessId = (String) params.get("businessId");
+        String expectedCurrentState = (String) params.get("expectedCurrentState");
         String shippingAddress = (String) params.get("shippingAddress");
 
         if (businessId == null || businessId.isBlank()) {
             return Map.of("success", false, "message", "缺少 businessId 参数");
         }
+        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
+        }
 
         try {
-            orderMachine.resumeByBusinessId("order-process", businessId, ctx -> {
+            orderMachine.resumeByBusinessId("order-process", businessId, expectedCurrentState, ctx -> {
                 if (shippingAddress != null && !shippingAddress.isBlank()) {
                     ctx.setShippingAddress(shippingAddress);
                 }
@@ -205,14 +209,18 @@ public class DemoController {
     @PostMapping("/outbound/resume")
     public Map<String, Object> resumeOutbound(@RequestBody Map<String, Object> params) {
         String businessId = (String) params.get("businessId");
+        String expectedCurrentState = (String) params.get("expectedCurrentState");
         String carrierCode = (String) params.get("carrierCode");
 
         if (businessId == null || businessId.isBlank()) {
             return Map.of("success", false, "message", "缺少 businessId 参数");
         }
+        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
+        }
 
         try {
-            outboundMachine.resumeByBusinessId("outbound-process", businessId, ctx -> {
+            outboundMachine.resumeByBusinessId("outbound-process", businessId, expectedCurrentState, ctx -> {
                 if (carrierCode != null && !carrierCode.isBlank()) {
                     ctx.setCarrierCode(carrierCode);
                 }

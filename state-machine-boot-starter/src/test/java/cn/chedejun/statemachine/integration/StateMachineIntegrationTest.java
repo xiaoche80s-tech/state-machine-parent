@@ -365,7 +365,7 @@ class StateMachineIntegrationTest {
         assertFalse(ctx.isCompleted());   // complete 未执行
 
         // 恢复执行
-        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-001", c -> {});
+        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-001", "wait-approval", c -> {});
 
         // 重新查询实例状态
         var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-001");
@@ -382,11 +382,11 @@ class StateMachineIntegrationTest {
         assertEquals("SUSPENDED", result.status());
 
         // 先恢复一次
-        suspendMachine.resumeByInstanceId(result.instanceId(), c -> {});
+        suspendMachine.resumeByInstanceId(result.instanceId(), "wait-approval", c -> {});
 
         // 再次恢复应该失败（已经不是 SUSPENDED 状态）
         assertThrows(StateMachineException.class, () ->
-            suspendMachine.resumeByInstanceId(result.instanceId(), c -> {}));
+            suspendMachine.resumeByInstanceId(result.instanceId(), "wait-approval", c -> {}));
     }
 
     @Test
@@ -399,7 +399,7 @@ class StateMachineIntegrationTest {
         assertFalse(ctx.isCompleted());
 
         // 恢复时通过 contextMerger 设置 processed = true，使状态能继续流转
-        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-002", c -> {
+        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-002", "wait-approval", c -> {
             c.setProcessed(true);
         });
 
@@ -413,7 +413,25 @@ class StateMachineIntegrationTest {
     @Order(53)
     void resumeByBusinessId_notFound_throwsException() {
         assertThrows(StateMachineException.class, () ->
-            suspendMachine.resumeByBusinessId("suspend-machine", "non-existent-biz", c -> {}));
+            suspendMachine.resumeByBusinessId("suspend-machine", "non-existent-biz", "any", c -> {}));
+    }
+
+    @Test
+    @Order(54)
+    void resume_wrongExpectedState_throwsException() {
+        TestContext ctx = new TestContext();
+        ExecuteResult result = suspendMachine.execute(ctx, "test-biz-003");
+        assertEquals("SUSPENDED", result.status());
+        assertEquals("wait-approval", result.currentState());
+
+        // 传错误的 expectedCurrentState，应该拒绝
+        assertThrows(StateMachineException.class, () ->
+            suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-003", "wrong-state", c -> {}));
+
+        // 状态应该不变
+        var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-003");
+        assertTrue(instance.isPresent());
+        assertEquals("SUSPENDED", instance.get().status());
     }
 
     // ===== 数据验证 =====

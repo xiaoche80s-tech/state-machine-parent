@@ -40,6 +40,16 @@ public class InstanceRepository {
         } catch (Exception e) { return Optional.empty(); }
     }
 
+    /**
+     * 原子地将 SUSPENDED 实例标记为 RUNNING。
+     * 返回 1 表示成功，返回 0 表示实例不是 SUSPENDED 状态（并发保护）。
+     */
+    public int tryMarkRunningFromSuspended(String id) {
+        return jdbcTemplate.update(
+            "UPDATE state_machine_instances SET status = 'RUNNING', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'SUSPENDED'",
+            id);
+    }
+
     public void updateState(String id, String currentState, String status, String errorMessage) {
         jdbcTemplate.update("UPDATE state_machine_instances SET current_state = ?, status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", currentState, status, errorMessage, id);
     }

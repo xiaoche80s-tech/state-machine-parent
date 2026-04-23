@@ -51,22 +51,27 @@ public class StateMachine<C> {
     }
 
     /** 通过业务 ID 恢复挂起的实例 */
-    public void resumeByBusinessId(String stateMachineName, String businessId, Consumer<C> contextMerger) {
+    public void resumeByBusinessId(String stateMachineName, String businessId, String expectedCurrentState, Consumer<C> contextMerger) {
         var instance = instanceRepository.findByBusinessId(stateMachineName, businessId)
             .orElseThrow(() -> new StateMachineException("Instance not found for stateMachine=" + stateMachineName + ", businessId=" + businessId));
-        resumeInstance(instance, contextMerger);
+        resumeInstance(instance, expectedCurrentState, contextMerger);
     }
 
     /** 通过状态机实例 ID 恢复挂起的实例 */
-    public void resumeByInstanceId(String instanceId, Consumer<C> contextMerger) {
+    public void resumeByInstanceId(String instanceId, String expectedCurrentState, Consumer<C> contextMerger) {
         var instance = instanceRepository.findById(instanceId)
             .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
-        resumeInstance(instance, contextMerger);
+        resumeInstance(instance, expectedCurrentState, contextMerger);
     }
 
-    private void resumeInstance(InstanceRepository.InstanceRecord instance, Consumer<C> contextMerger) {
-        if (!"SUSPENDED".equals(instance.status()))
-            throw new StateMachineException("Can only resume SUSPENDED instances, current status: " + instance.status());
+    private void resumeInstance(InstanceRepository.InstanceRecord instance, String expectedCurrentState, Consumer<C> contextMerger) {
+        if (!instance.currentState().equals(expectedCurrentState))
+            throw new StateMachineException(String.format("State mismatch: expected '%s', actual '%s'", expectedCurrentState, instance.currentState()));
+
+        // 原子地将 SUSPENDED 切换为 RUNNING，返回 0 说明已被其他线程 resume
+        int updated = instanceRepository.tryMarkRunningFromSuspended(instance.id());
+        if (updated == 0)
+            throw new StateMachineException("Instance already resumed or not suspended: " + instance.id());
 
         // 从最新快照恢复 context
         var snapshots = snapshotRepository.findByInstanceId(instance.id());
