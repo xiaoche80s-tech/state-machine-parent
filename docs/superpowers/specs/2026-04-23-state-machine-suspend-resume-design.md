@@ -125,11 +125,10 @@ BeanPostProcessor 逻辑不变，自动注入不受影响。
 ## 使用约束
 
 - **方法形参不超过 4 个**（构造函数除外） — 所有方法严格遵守
-  - `StateMachine` 构造函数 6 个参数，不受影响
   - 新增/修改的方法需遵守此约束
-- **禁止使用 Map 形式的 Context** — 删除 `Context` 类，用户必须定义具体的 POJO Context 类
-  - `StateMachineBuilder.contextClass()` 变为必需方法，构建时不传则抛异常
-  - `StateMachine.deserialize` 移除 fallback 到 `Context.class` 的兼容代码
+- **优先使用强类型 Context 而非 put/get** — 保留 `Context` 类作为基类，但推荐用户定义具体的 POJO Context 类
+  - 用户可通过继承 `Context` 获得 put/get 能力（向后兼容），或直接定义 POJO
+  - `StateMachine.deserialize` 优先使用用户指定的 `contextClass` 反序列化
 
 ## 前端标识
 
@@ -138,7 +137,7 @@ BeanPostProcessor 逻辑不变，自动注入不受影响。
 ## 使用示例
 
 ```java
-// 用户自定义 Context（强类型，非 Map）
+// 用户定义 Context（推荐强类型，也可继承 Context 获得 put/get 能力）
 public class OrderContext {
     private String orderId;
     private int stock;
@@ -150,7 +149,7 @@ public class OrderContext {
 @Bean
 public StateMachine<OrderContext> orderMachine() {
     return StateMachineBuilder.<OrderContext>builder("order-process")
-        .contextClass(OrderContext.class)  // 必需
+        .contextClass(OrderContext.class)
         .state("check-inventory", this::checkInventory)
         .state("process-payment", this::processPayment)
         .suspendState("wait-approval", ctx -> {})  // 挂起点：等待审批
