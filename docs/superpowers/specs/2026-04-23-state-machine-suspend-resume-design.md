@@ -24,8 +24,10 @@ ALTER TABLE state_machine_instances
 
 ### 状态枚举值扩展
 
-现有 `status` 枚举值：`RUNNING` / `COMPLETED` / `FAILED` / `REACHED`
+现有 `status` 枚举值：`RUNNING` / `COMPLETED` / `FAILED`
 新增：`SUSPENDED` — 实例在挂起点暂停，等待外部唤醒
+
+删除：`REACHED` — 该状态与已移除的 `targetState` 参数绑定
 
 ### 三套 DDL 同步更新（H2/MySQL/PostgreSQL）
 
@@ -62,7 +64,23 @@ public StateMachineBuilder<C> suspendState(String name, Action<C> action) {
 
 挂起点信息随 states JSON 序列化到 `state_machine_definitions` 表中，定义持久化时自动携带。
 
-### 3. StateMachine<C> — 新增恢复方法
+### 3. StateMachine<C> — 简化 execute，新增恢复方法
+
+**移除 `execute(context, targetState)` 和 `execute(context, startState, targetState)` 方法。** `StateMachine` 只保留一个执行入口：
+
+```java
+public ExecuteResult execute(C context)
+```
+
+`executeLoop` 签名相应简化，不再需要 `startState` 和 `targetState` 参数。
+
+终止逻辑：
+- 无下一状态 → `COMPLETED`
+- 遇到挂起点 → `SUSPENDED`
+
+由于 `REACHED` 状态与 `targetState` 绑定，移除 `targetState` 后一并删除 `REACHED` 状态。
+
+新增两个恢复方法：
 
 ```java
 /** 通过业务 ID 恢复挂起的实例 */
