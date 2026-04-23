@@ -124,10 +124,9 @@ BeanPostProcessor 逻辑不变，自动注入不受影响。
 
 ## 使用约束
 
-- **方法形参不超过 4 个** — 所有方法（含 Builder 链式方法、构造函数）严格遵守
-  - `StateMachine` 构造函数现有 6 个参数，改为包私有静态参数类承载
-  - `State` 构造函数现有 2 个参数，增加 `suspended` 后为 3 个，不受影响
-  - Record 类型（如 `InstanceRecord`、`SnapshotRecord`）为数据载体，不受此限制
+- **方法形参不超过 4 个**（构造函数除外） — 所有方法严格遵守
+  - `StateMachine` 构造函数 6 个参数，不受影响
+  - 新增/修改的方法需遵守此约束
 - **禁止使用 Map 形式的 Context** — 删除 `Context` 类，用户必须定义具体的 POJO Context 类
   - `StateMachineBuilder.contextClass()` 变为必需方法，构建时不传则抛异常
   - `StateMachine.deserialize` 移除 fallback 到 `Context.class` 的兼容代码
