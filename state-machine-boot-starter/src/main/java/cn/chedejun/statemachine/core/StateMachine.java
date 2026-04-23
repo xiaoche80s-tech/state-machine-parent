@@ -41,7 +41,7 @@ public class StateMachine<C> {
         ensureInitialized();
         String currentState = startState != null ? startState : states.get(0).getName();
         String definitionId = resolveDefinitionId();
-        String instanceId = instanceRepository.create(definitionId, name, version, currentState);
+        String instanceId = instanceRepository.create(new cn.chedejun.statemachine.persistence.InstanceRepository.CreateInstanceParams(definitionId, name, version, currentState));
         executeLoop(instanceId, context, currentState, targetState);
         var record = instanceRepository.findById(instanceId).orElseThrow();
         return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), record.createdAt());
