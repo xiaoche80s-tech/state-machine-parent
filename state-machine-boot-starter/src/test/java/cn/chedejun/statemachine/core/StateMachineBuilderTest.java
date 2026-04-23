@@ -82,41 +82,25 @@ class StateMachineBuilderTest {
         assertFalse(step3Executed.get()); // step3 不应该被执行
     }
 
-    @Test void execute_withTargetState_returnsReached() {
+    @Test
+    void execute_suspendPoint_stopsExecution() {
+        AtomicBoolean step2Executed = new AtomicBoolean(false);
         AtomicBoolean step3Executed = new AtomicBoolean(false);
-        StateMachine<Context> m = StateMachineBuilder.<Context>builder("reached-test")
-            .state("step1", ctx -> ctx.put("done", true))
-            .state("step2", ctx -> {})
+        StateMachine<Context> m = StateMachineBuilder.<Context>builder("suspend-exec")
+            .state("step1", ctx -> ctx.put("step1", true))
+            .suspendState("step2", ctx -> step2Executed.set(true))
             .state("step3", ctx -> step3Executed.set(true))
             .transition("step1", "step2", ctx -> true)
             .transition("step2", "step3", ctx -> true)
             .retryPolicy(RetryPolicy.none())
             .jdbcTemplate(jdbcTemplate).build();
 
-        // 指定 targetState 为 step2，step2 后面还有 step3，应该返回 REACHED
-        ExecuteResult result = m.execute(new Context(), "step2");
+        ExecuteResult result = m.execute(new Context());
 
-        assertEquals("REACHED", result.status());
+        assertEquals("SUSPENDED", result.status());
         assertEquals("step2", result.currentState());
-        assertFalse(step3Executed.get());
-    }
-
-    @Test void execute_targetStateIsLastState_returnsCompleted() {
-        StateMachine<Context> m = StateMachineBuilder.<Context>builder("last-state-test")
-            .state("step1", ctx -> {})
-            .state("step2", ctx -> {})
-            .state("step3", ctx -> ctx.put("done", true))
-            .transition("step1", "step2", ctx -> true)
-            .transition("step2", "step3", ctx -> true)
-            // step3 没有后续 Transition
-            .retryPolicy(RetryPolicy.none())
-            .jdbcTemplate(jdbcTemplate).build();
-
-        // targetState 是最后一个状态，后面没有后续状态，应该返回 COMPLETED
-        ExecuteResult result = m.execute(new Context(), "step3");
-
-        assertEquals("COMPLETED", result.status());
-        assertEquals("step3", result.currentState());
+        assertTrue(step2Executed.get());  // 挂起点的 Action 已执行
+        assertFalse(step3Executed.get()); // step3 未执行
     }
 
     @Test

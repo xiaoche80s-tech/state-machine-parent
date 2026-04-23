@@ -5,8 +5,10 @@ import cn.chedejun.statemachine.persistence.DefinitionRepository;
 import cn.chedejun.statemachine.persistence.InstanceRepository;
 import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
+
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Consumer;
 
 public class StateMachine<C> {
 
@@ -34,17 +36,51 @@ public class StateMachine<C> {
         this.contextClass = contextClass;
     }
 
-    public ExecuteResult execute(C context) { return execute(context, null, null); }
-    public ExecuteResult execute(C context, String targetState) { return execute(context, null, targetState); }
+    public ExecuteResult execute(C context) {
+        return execute(context, null);
+    }
 
-    public ExecuteResult execute(C context, String startState, String targetState) {
+    public ExecuteResult execute(C context, String businessId) {
         ensureInitialized();
-        String currentState = startState != null ? startState : states.get(0).getName();
+        String currentState = states.get(0).getName();
         String definitionId = resolveDefinitionId();
-        String instanceId = instanceRepository.create(new cn.chedejun.statemachine.persistence.InstanceRepository.CreateInstanceParams(definitionId, name, version, currentState));
-        executeLoop(instanceId, context, currentState, targetState);
+        String instanceId = instanceRepository.create(new InstanceRepository.CreateInstanceParams(definitionId, name, version, currentState, businessId));
+        executeLoop(instanceId, context, currentState);
         var record = instanceRepository.findById(instanceId).orElseThrow();
-        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), record.businessId(), record.createdAt());
+        return new ExecuteResult(instanceId, name, version, record.currentState(), record.status(), record.errorMessage(), businessId, record.createdAt());
+    }
+
+    /** 通过业务 ID 恢复挂起的实例 */
+    public void resumeByBusinessId(String businessId, Consumer<C> contextMerger) {
+        String definitionId = resolveDefinitionId();
+        var instance = instanceRepository.findByBusinessId(definitionId, businessId)
+            .orElseThrow(() -> new StateMachineException("Instance not found for businessId: " + businessId));
+        resumeInstance(instance, contextMerger);
+    }
+
+    /** 通过状态机实例 ID 恢复挂起的实例 */
+    public void resumeByInstanceId(String instanceId, Consumer<C> contextMerger) {
+        var instance = instanceRepository.findById(instanceId)
+            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        resumeInstance(instance, contextMerger);
+    }
+
+    private void resumeInstance(InstanceRepository.InstanceRecord instance, Consumer<C> contextMerger) {
+        if (!"SUSPENDED".equals(instance.status()))
+            throw new StateMachineException("Can only resume SUSPENDED instances, current status: " + instance.status());
+
+        // 从最新快照恢复 context
+        var snapshots = snapshotRepository.findByInstanceId(instance.id());
+        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
+        C context = deserialize(contextJson != null ? contextJson : "{}");
+
+        // 应用 context 修改
+        contextMerger.accept(context);
+
+        // 恢复执行
+        instanceRepository.updateState(instance.id(), instance.currentState(), "RUNNING", null);
+        instanceRepository.setRetryCount(instance.id(), 0);
+        executeLoop(instance.id(), context, instance.currentState());
     }
 
     public void retry(String instanceId, C context) {
@@ -55,7 +91,7 @@ public class StateMachine<C> {
             throw new StateMachineException("Can only retry FAILED instances, current status: " + instance.status());
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
         instanceRepository.setRetryCount(instanceId, 0);
-        executeLoop(instanceId, context, instance.currentState(), null);
+        executeLoop(instanceId, context, instance.currentState());
     }
 
     /**
@@ -75,12 +111,12 @@ public class StateMachine<C> {
 
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
         instanceRepository.setRetryCount(instanceId, 0);
-        executeLoop(instanceId, context, instance.currentState(), null);
+        executeLoop(instanceId, context, instance.currentState());
     }
 
     // ===== 核心执行循环（execute 和 retry 共享） =====
 
-    private void executeLoop(String instanceId, C context, String startState, String targetState) {
+    private void executeLoop(String instanceId, C context, String startState) {
         String currentState = startState;
         int maxIterations = states.size() * (retryPolicy.getMaxAttempts() + 1) + 1;
         int iteration = 0;
@@ -115,12 +151,9 @@ public class StateMachine<C> {
                     String.format("State '%s' failed after %d attempts: %s", currentState, retryCount + 1, e.getMessage()), e);
             }
 
-            if (targetState != null && currentState.equals(targetState)) {
-                if (findNextState(context, currentState).isEmpty()) {
-                    instanceRepository.updateState(instanceId, currentState, "COMPLETED", null);
-                } else {
-                    instanceRepository.updateState(instanceId, currentState, "REACHED", null);
-                }
+            // 挂起点检查：在 Action 执行成功后，查找下一状态之前
+            if (state.isSuspended()) {
+                instanceRepository.markSuspended(instanceId, currentState);
                 return;
             }
 
@@ -154,10 +187,11 @@ public class StateMachine<C> {
 
     @SuppressWarnings("unchecked")
     private C deserialize(String json) {
-        try { return objectMapper.readValue(json, contextClass); } catch (Exception e) {
+        try { return (C) objectMapper.readValue(json, contextClass); } catch (Exception e) {
             try { return (C) objectMapper.readValue(json, Context.class); } catch (Exception e2) { return null; }
         }
     }
+
     private String resolveDefinitionId() {
         if (registry != null) return registry.getVersions(name).stream()
             .filter(v -> v.version().equals(version)).findFirst()
