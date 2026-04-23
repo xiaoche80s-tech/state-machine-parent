@@ -365,11 +365,10 @@ class StateMachineIntegrationTest {
         assertFalse(ctx.isCompleted());   // complete 未执行
 
         // 恢复执行
-        suspendMachine.resumeByBusinessId("test-biz-001", c -> {});
+        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-001", c -> {});
 
         // 重新查询实例状态
-        var instance = instanceRepository().findByBusinessId(
-            resolveDefinitionId("suspend-machine"), "test-biz-001");
+        var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-001");
         assertTrue(instance.isPresent());
         assertEquals("COMPLETED", instance.get().status());
         assertEquals("complete", instance.get().currentState());
@@ -400,13 +399,12 @@ class StateMachineIntegrationTest {
         assertFalse(ctx.isCompleted());
 
         // 恢复时通过 contextMerger 设置 processed = true，使状态能继续流转
-        suspendMachine.resumeByBusinessId("test-biz-002", c -> {
+        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-002", c -> {
             c.setProcessed(true);
         });
 
         // 验证状态机已完成，说明 contextMerger 修改生效了
-        var instance = instanceRepository().findByBusinessId(
-            resolveDefinitionId("suspend-machine"), "test-biz-002");
+        var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-002");
         assertTrue(instance.isPresent());
         assertEquals("COMPLETED", instance.get().status());
     }
@@ -415,7 +413,7 @@ class StateMachineIntegrationTest {
     @Order(53)
     void resumeByBusinessId_notFound_throwsException() {
         assertThrows(StateMachineException.class, () ->
-            suspendMachine.resumeByBusinessId("non-existent-biz", c -> {}));
+            suspendMachine.resumeByBusinessId("suspend-machine", "non-existent-biz", c -> {}));
     }
 
     // ===== 数据验证 =====

@@ -85,7 +85,7 @@ public class DemoController {
         }
 
         try {
-            orderMachine.resumeByBusinessId(businessId, ctx -> {
+            orderMachine.resumeByBusinessId("order-process", businessId, ctx -> {
                 if (shippingAddress != null && !shippingAddress.isBlank()) {
                     ctx.setShippingAddress(shippingAddress);
                 }
@@ -212,7 +212,7 @@ public class DemoController {
         }
 
         try {
-            outboundMachine.resumeByBusinessId(businessId, ctx -> {
+            outboundMachine.resumeByBusinessId("outbound-process", businessId, ctx -> {
                 if (carrierCode != null && !carrierCode.isBlank()) {
                     ctx.setCarrierCode(carrierCode);
                 }

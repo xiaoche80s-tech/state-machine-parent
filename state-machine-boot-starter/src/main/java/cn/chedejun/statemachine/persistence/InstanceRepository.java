@@ -32,11 +32,11 @@ public class InstanceRepository {
         catch (Exception e) { return Optional.empty(); }
     }
 
-    public Optional<InstanceRecord> findByBusinessId(String definitionId, String businessId) {
+    public Optional<InstanceRecord> findByBusinessId(String machineName, String businessId) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(
-                "SELECT * FROM state_machine_instances WHERE definition_id = ? AND business_id = ? ORDER BY created_at DESC LIMIT 1",
-                rowMapper(), definitionId, businessId));
+                "SELECT * FROM state_machine_instances WHERE machine_name = ? AND business_id = ? ORDER BY created_at DESC LIMIT 1",
+                rowMapper(), machineName, businessId));
         } catch (Exception e) { return Optional.empty(); }
     }
 

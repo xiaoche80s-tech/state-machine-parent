@@ -59,7 +59,7 @@ class InstanceRepositoryTest extends BaseRepositoryTest {
     @Test void findByBusinessId_returnsMatchingInstance() {
         repository.create(new InstanceRepository.CreateInstanceParams("def-1", "order-process", "v1", "created", "ORD-123"));
         repository.create(new InstanceRepository.CreateInstanceParams("def-2", "shipping", "v1", "created", "ORD-456"));
-        var r = repository.findByBusinessId("def-1", "ORD-123");
+        var r = repository.findByBusinessId("order-process", "ORD-123");
         assertTrue(r.isPresent());
         assertEquals("ORD-123", r.get().businessId());
         assertEquals("def-1", r.get().definitionId());

@@ -51,10 +51,9 @@ public class StateMachine<C> {
     }
 
     /** 通过业务 ID 恢复挂起的实例 */
-    public void resumeByBusinessId(String businessId, Consumer<C> contextMerger) {
-        String definitionId = resolveDefinitionId();
-        var instance = instanceRepository.findByBusinessId(definitionId, businessId)
-            .orElseThrow(() -> new StateMachineException("Instance not found for businessId: " + businessId));
+    public void resumeByBusinessId(String stateMachineName, String businessId, Consumer<C> contextMerger) {
+        var instance = instanceRepository.findByBusinessId(stateMachineName, businessId)
+            .orElseThrow(() -> new StateMachineException("Instance not found for stateMachine=" + stateMachineName + ", businessId=" + businessId));
         resumeInstance(instance, contextMerger);
     }
 
