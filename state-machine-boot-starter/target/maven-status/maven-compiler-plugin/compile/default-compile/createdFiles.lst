@@ -1,0 +1,10 @@
+cn/chedejun/statemachine/core/RetryPolicy$Builder.class
+cn/chedejun/statemachine/core/RetryPolicy.class
+cn/chedejun/statemachine/core/Condition.class
+cn/chedejun/statemachine/persistence/InstanceRepository$InstanceRecord.class
+cn/chedejun/statemachine/core/StateMachineRegistry.class
+cn/chedejun/statemachine/core/State.class
+cn/chedejun/statemachine/persistence/InstanceRepository.class
+cn/chedejun/statemachine/core/StateMachineBuilder.class
+cn/chedejun/statemachine/core/Action.class
+cn/chedejun/statemachine/core/Transition.class

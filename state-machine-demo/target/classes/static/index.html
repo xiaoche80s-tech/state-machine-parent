@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>状态机演示 - 订单处理</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 24px; margin-bottom: 24px; color: #1a1a2e; }
+        h2 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
+
+        .grid { display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
+
+        .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+        /* Form */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; font-weight: 500; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 14px; transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #4f46e5; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 12px 24px; border: none; border-radius: 8px;
+            font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-primary { background: #4f46e5; color: #fff; }
+        .btn-primary:hover { background: #4338ca; }
+        .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-outline { background: transparent; border: 1px solid #4f46e5; color: #4f46e5; }
+        .btn-outline:hover { background: #eef2ff; }
+
+        /* Flow diagram */
+        .flow { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
+        .flow-step {
+            padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
+            background: #e5e7eb; color: #374151; transition: all 0.3s;
+        }
+        .flow-step.active { background: #dbeafe; color: #1d4ed8; box-shadow: 0 0 0 2px #93c5fd; }
+        .flow-step.success { background: #dcfce7; color: #166534; }
+        .flow-step.fail { background: #fee2e2; color: #991b1b; }
+        .flow-arrow { color: #9ca3af; font-size: 18px; }
+
+        /* Result */
+        .result { margin-top: 16px; padding: 16px; border-radius: 8px; font-size: 14px; display: none; }
+        .result.show { display: block; }
+        .result.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+        .result.fail { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+
+        /* Orders list */
+        .orders { margin-top: 24px; }
+        .order-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 0; border-bottom: 1px solid #f0f0f0;
+        }
+        .order-item:last-child { border-bottom: none; }
+        .order-id { font-family: monospace; font-size: 13px; color: #6b7280; }
+        .order-info { flex: 1; }
+
+        .badge {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-running { background: #fef3c7; color: #92400e; }
+        .badge-completed { background: #dcfce7; color: #166534; }
+        .badge-failed { background: #fee2e2; color: #991b1b; }
+
+        /* Snapshots */
+        .snapshots { margin-top: 12px; }
+        .snapshot {
+            display: flex; align-items: center; gap: 12px;
+            padding: 8px 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 6px; font-size: 13px;
+        }
+        .snapshot .state { font-weight: 600; min-width: 120px; }
+        .snapshot .time { color: #9ca3af; font-family: monospace; font-size: 12px; }
+
+        .loading { text-align: center; color: #9ca3af; padding: 24px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>&#x1F680; 状态机演示 — 订单处理流程</h1>
+
+    <!-- Flow Diagram -->
+    <div class="flow">
+        <span class="flow-step" id="f-check">检查库存</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step" id="f-pay">处理支付</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step" id="f-ship">订单发货</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-step" id="f-notify">发送通知</span>
+    </div>
+
+    <div class="grid">
+        <!-- Left: Form -->
+        <div>
+            <div class="card">
+                <h2>&#x1F6D2; 创建订单</h2>
+                <div class="form-group">
+                    <label>库存数量</label>
+                    <input type="number" id="stock" value="10" min="-1">
+                </div>
+                <div class="form-group">
+                    <label>订单金额 (&yen;)</label>
+                    <input type="number" id="amount" value="99.99" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label>收货地址</label>
+                    <input type="text" id="address" value="北京市朝阳区望京路88号">
+                </div>
+                <button class="btn btn-primary" id="submitBtn" onclick="createOrder()">
+                    &#x1F4E6; 提交订单
+                </button>
+                <div class="result" id="result"></div>
+            </div>
+
+            <div class="card" style="margin-top:16px">
+                <h2>&#x1F4CA; 流程快照</h2>
+                <div class="snapshots" id="snapshots">
+                    <div class="loading">暂无数据</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Orders -->
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <h2 style="margin:0">&#x1F4CB; 最近订单</h2>
+                <button class="btn btn-sm btn-outline" onclick="loadOrders()">&#x1F504; 刷新</button>
+            </div>
+            <div class="orders" id="orders">
+                <div class="loading">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function createOrder() {
+        const btn = document.getElementById('submitBtn');
+        const result = document.getElementById('result');
+        btn.disabled = true;
+        btn.textContent = '执行中...';
+        result.className = 'result';
+
+        // Reset flow
+        document.querySelectorAll('.flow-step').forEach(el => { el.className = 'flow-step'; });
+
+        const body = {
+            stock: parseInt(document.getElementById('stock').value),
+            amount: parseFloat(document.getElementById('amount').value),
+            address: document.getElementById('address').value
+        };
+
+        try {
+            const res = await fetch('/demo/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+
+            result.className = 'result show ' + (data.success ? 'success' : 'fail');
+            result.innerHTML = `
+                <strong>${data.success ? '&#x2705; 成功' : '&#x274C; 失败'}</strong><br>
+                订单号: <code>${data.orderId}</code><br>
+                实例ID: <code>${data.instanceId}</code><br>
+                状态: ${data.status}<br>
+                ${data.message}
+            `;
+
+            // Animate flow
+            animateFlow(data.instanceId);
+
+            // Refresh orders
+            loadOrders();
+        } catch (e) {
+            result.className = 'result show fail';
+            result.innerHTML = `<strong>&#x274C; 请求失败</strong><br>${e.message}`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '&#x1F4E6; 提交订单';
+        }
+    }
+
+    async function animateFlow(instanceId) {
+        try {
+            const res = await fetch(`/demo/orders/${instanceId}`);
+            const data = await res.json();
+            if (!data.snapshots) return;
+
+            const stateMap = {
+                'check-inventory': 'f-check',
+                'process-payment': 'f-pay',
+                'ship-order': 'f-ship',
+                'send-notification': 'f-notify',
+                'order-failed': 'f-pay',
+                'notify-shortage': 'f-check'
+            };
+
+            // Show snapshots
+            const snapEl = document.getElementById('snapshots');
+            snapEl.innerHTML = data.snapshots.map(s => `
+                <div class="snapshot">
+                    <span class="state">${s.stateName}</span>
+                    <span class="badge badge-${s.status.toLowerCase()}">${s.status}</span>
+                    <span class="time">attempt #${s.attempt}</span>
+                    ${s.errorMessage ? `<span style="color:#dc2626">${s.errorMessage}</span>` : ''}
+                </div>
+            `).join('');
+
+            // Animate steps
+            for (const s of data.snapshots) {
+                const elId = stateMap[s.stateName];
+                if (!elId) continue;
+                const el = document.getElementById(elId);
+                if (el) {
+                    el.className = 'flow-step ' + (s.status === 'SUCCESS' ? 'success' : 'fail');
+                }
+            }
+        } catch (e) {}
+    }
+
+    async function loadOrders() {
+        const el = document.getElementById('orders');
+        try {
+            const res = await fetch('/demo/orders?limit=20');
+            const orders = await res.json();
+            if (orders.length === 0) {
+                el.innerHTML = '<div class="loading">暂无订单</div>';
+                return;
+            }
+            el.innerHTML = orders.map(o => `
+                <div class="order-item" onclick="showDetail('${o.id}')" style="cursor:pointer">
+                    <div class="order-info">
+                        <div class="order-id">${o.id}</div>
+                        <div style="font-size:12px;color:#9ca3af">${o.currentState} | 重试: ${o.retryCount}</div>
+                    </div>
+                    <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+                </div>
+            `).join('');
+        } catch (e) {
+            el.innerHTML = '<div class="loading">加载失败</div>';
+        }
+    }
+
+    async function showDetail(id) {
+        try {
+            const res = await fetch(`/demo/orders/${id}`);
+            const data = await res.json();
+            animateFlow(id);
+        } catch (e) {}
+    }
+
+    // Initial load
+    loadOrders();
+</script>
+</body>
+</html>
