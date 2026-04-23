@@ -472,6 +472,36 @@ public class StateMachine<C> {
         executeLoop(instance.id(), context, instance.currentState());
     }
 
+    public void retry(String instanceId, C context) {
+        ensureInitialized();
+        InstanceRepository.InstanceRecord instance = instanceRepository.findById(instanceId)
+            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        if (!"FAILED".equals(instance.status()))
+            throw new StateMachineException("Can only retry FAILED instances, current status: " + instance.status());
+        instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
+        instanceRepository.setRetryCount(instanceId, 0);
+        executeLoop(instanceId, context, instance.currentState());
+    }
+
+    /**
+     * 重试失败的实例，自动从首次快照读取并反序列化 context
+     */
+    public void retry(String instanceId) {
+        ensureInitialized();
+        InstanceRepository.InstanceRecord instance = instanceRepository.findById(instanceId)
+            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        if (!"FAILED".equals(instance.status()))
+            throw new StateMachineException("Can only retry FAILED instances, current status: " + instance.status());
+
+        var snapshots = snapshotRepository.findByInstanceId(instanceId);
+        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(0).inputJson();
+        C context = deserialize(contextJson);
+
+        instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
+        instanceRepository.setRetryCount(instanceId, 0);
+        executeLoop(instanceId, context, instance.currentState());
+    }
+
     // ===== 核心执行循环 =====
 
     private void executeLoop(String instanceId, C context, String startState) {
