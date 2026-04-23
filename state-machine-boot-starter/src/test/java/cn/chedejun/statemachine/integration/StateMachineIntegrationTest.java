@@ -394,21 +394,28 @@ class StateMachineIntegrationTest {
     @Order(52)
     void resume_contextMerger_modifiesContext() {
         TestContext ctx = new TestContext();
-        ctx.put("extra-key", "original-value");
         ExecuteResult result = suspendMachine.execute(ctx, "test-biz-002");
 
         assertEquals("SUSPENDED", result.status());
+        assertFalse(ctx.isCompleted());
 
-        // 恢复时修改 context
+        // 恢复时通过 contextMerger 设置 processed = true，使状态能继续流转
         suspendMachine.resumeByBusinessId("test-biz-002", c -> {
-            c.put("extra-key", "modified-value");
+            c.setProcessed(true);
         });
 
-        // 从快照验证 context 被修改
-        var snapshots = snapshotRepository().findByInstanceId(result.instanceId());
-        // 最后一个快照的 output 应该包含修改后的值
-        var lastSnapshot = snapshots.get(snapshots.size() - 1);
-        assertNotNull(lastSnapshot.outputJson());
+        // 验证状态机已完成，说明 contextMerger 修改生效了
+        var instance = instanceRepository().findByBusinessId(
+            resolveDefinitionId("suspend-machine"), "test-biz-002");
+        assertTrue(instance.isPresent());
+        assertEquals("COMPLETED", instance.get().status());
+    }
+
+    @Test
+    @Order(53)
+    void resumeByBusinessId_notFound_throwsException() {
+        assertThrows(StateMachineException.class, () ->
+            suspendMachine.resumeByBusinessId("non-existent-biz", c -> {}));
     }
 
     // ===== 数据验证 =====

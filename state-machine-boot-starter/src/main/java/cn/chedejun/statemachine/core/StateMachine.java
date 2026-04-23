@@ -73,6 +73,8 @@ public class StateMachine<C> {
         var snapshots = snapshotRepository.findByInstanceId(instance.id());
         String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
         C context = deserialize(contextJson != null ? contextJson : "{}");
+        if (context == null)
+            throw new StateMachineException("Failed to deserialize context for instance: " + instance.id());
 
         // 应用 context 修改
         contextMerger.accept(context);
