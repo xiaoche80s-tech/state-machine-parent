@@ -45,6 +45,27 @@ public class DefinitionRepository {
         return id;
     }
 
+    public void update(String name, String version, List<?> states, List<?> transitions, String retryPolicyJson) {
+        String statesJson;
+        String transitionsJson;
+        try {
+            statesJson = objectMapper.writeValueAsString(states);
+            transitionsJson = objectMapper.writeValueAsString(transitions);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize state machine definition", e);
+        }
+        jdbcTemplate.update(
+            "UPDATE state_machine_definitions SET states = ?, transitions = ?, retry_policy = ?, registered_at = CURRENT_TIMESTAMP WHERE name = ? AND version = ?",
+            ps -> {
+                int i = 1;
+                setJson(ps, i++, statesJson);
+                setJson(ps, i++, transitionsJson);
+                setJson(ps, i++, retryPolicyJson);
+                ps.setString(i++, name);
+                ps.setString(i++, version);
+            });
+    }
+
     private void setJson(PreparedStatement ps, int idx, String json) throws SQLException {
         ps.setObject(idx, json, Types.OTHER);
     }

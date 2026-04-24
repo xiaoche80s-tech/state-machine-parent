@@ -249,9 +249,13 @@ createApp({
             for (const v of versions.value) {
                 const el = document.getElementById('mermaid-' + v.id);
                 if (!el || !v.transitions) continue;
+                const suspendedMap = {};
+                if (v.states) v.states.forEach(s => { suspendedMap[s.name] = s.suspended; });
                 let def = 'graph LR\n';
                 v.transitions.forEach(t => {
-                    def += `    ${t.from}([${t.from}]) --> ${t.to}([${t.to}])\n`;
+                    const fromLabel = suspendedMap[t.from] ? `${t.from} [挂起]` : t.from;
+                    const toLabel = suspendedMap[t.to] ? `${t.to} [挂起]` : t.to;
+                    def += `    ${t.from}([${fromLabel}]) --> ${t.to}([${toLabel}])\n`;
                 });
                 el.textContent = def;
             }

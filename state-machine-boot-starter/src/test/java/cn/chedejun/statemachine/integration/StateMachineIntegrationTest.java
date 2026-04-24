@@ -179,7 +179,7 @@ class StateMachineIntegrationTest {
     @Order(10)
     void execute_successfulFlow_persistsSnapshots() {
         TestContext ctx = new TestContext();
-        ExecuteResult result = testMachine.execute(ctx);
+        ExecuteResult result = testMachine.execute(ctx, "biz-execute-successful");
 
         assertNotNull(result.instanceId());
         assertTrue(ctx.isValidated());
@@ -224,7 +224,7 @@ class StateMachineIntegrationTest {
     @Order(20)
     void execute_failedState_recordsFailedSnapshots() {
         TestContext ctx = new TestContext();
-        assertThrows(StateMachineException.class, () -> failingMachine.execute(ctx));
+        assertThrows(StateMachineException.class, () -> failingMachine.execute(ctx, "biz-failing"));
 
         var instances = instanceRepository().findByMachineName("failing-machine", 0, 10);
         assertEquals(1, instances.size());
@@ -239,7 +239,7 @@ class StateMachineIntegrationTest {
     @Order(21)
     void retry_failedInstance_resetsState() {
         TestContext ctx = new TestContext();
-        try { failingMachine.execute(ctx); } catch (StateMachineException ignored) {}
+        try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
 
         var instances = instanceRepository().findByMachineName("failing-machine", 0, 10);
         String instanceId = instances.get(0).id();
@@ -258,7 +258,7 @@ class StateMachineIntegrationTest {
     @Order(30)
     void consoleApi_listMachines() {
         Assumptions.assumeTrue(consoleController != null);
-        testMachine.execute(new TestContext());
+        testMachine.execute(new TestContext(), "biz-console-api");
 
         var machines = consoleController.listMachines();
         assertFalse(machines.isEmpty());
@@ -272,7 +272,7 @@ class StateMachineIntegrationTest {
     @Order(31)
     void consoleApi_getVersions() {
         Assumptions.assumeTrue(consoleController != null);
-        testMachine.execute(new TestContext());
+        testMachine.execute(new TestContext(), "biz-console-api");
 
         var versions = consoleController.getVersions("test-machine");
         assertFalse(versions.isEmpty());
@@ -286,7 +286,7 @@ class StateMachineIntegrationTest {
     @Order(32)
     void consoleApi_getInstances() {
         Assumptions.assumeTrue(consoleController != null);
-        testMachine.execute(new TestContext());
+        testMachine.execute(new TestContext(), "biz-console-api");
 
         var result = consoleController.getInstances("test-machine", null, 0, 20);
         assertTrue((long) result.get("total") > 0);
@@ -300,7 +300,7 @@ class StateMachineIntegrationTest {
     @Order(33)
     void consoleApi_getInstanceDetail() {
         Assumptions.assumeTrue(consoleController != null);
-        ExecuteResult result = testMachine.execute(new TestContext());
+        ExecuteResult result = testMachine.execute(new TestContext(), "biz-instance-detail");
         String instanceId = result.instanceId();
 
         var detail = consoleController.getInstanceDetail(instanceId);
@@ -316,7 +316,7 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         // Create a failing instance
         TestContext ctx = new TestContext();
-        try { failingMachine.execute(ctx); } catch (StateMachineException ignored) {}
+        try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
         var instances = instanceRepository().findByMachineName("failing-machine", 0, 10);
         String instanceId = instances.stream()
             .filter(r -> "FAILED".equals(r.status())).findFirst().orElseThrow().id();
@@ -334,7 +334,7 @@ class StateMachineIntegrationTest {
     @Order(40)
     void actuatorEndpoint_listsMachines() {
         Assumptions.assumeTrue(endpoint != null);
-        testMachine.execute(new TestContext());
+        testMachine.execute(new TestContext(), "biz-console-api");
         var machines = endpoint.listMachines();
         assertFalse(machines.isEmpty());
     }
@@ -343,7 +343,7 @@ class StateMachineIntegrationTest {
     @Order(41)
     void actuatorEndpoint_getVersions() {
         Assumptions.assumeTrue(endpoint != null);
-        testMachine.execute(new TestContext());
+        testMachine.execute(new TestContext(), "biz-console-api");
         var versions = endpoint.getVersions("test-machine");
         assertFalse(versions.isEmpty());
         var ver = versions.get(0);
@@ -378,7 +378,7 @@ class StateMachineIntegrationTest {
     @Order(51)
     void resume_nonSuspendedInstance_throwsException() {
         TestContext ctx = new TestContext();
-        ExecuteResult result = suspendMachine.execute(ctx);
+        ExecuteResult result = suspendMachine.execute(ctx, "biz-resume-non-suspended");
         assertEquals("SUSPENDED", result.status());
 
         // 先恢复一次

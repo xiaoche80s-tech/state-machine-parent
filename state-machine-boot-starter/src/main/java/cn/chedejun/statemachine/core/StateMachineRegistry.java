@@ -21,13 +21,15 @@ public class StateMachineRegistry {
     public <C> void register(StateMachine<C> machine) {
         String name = machine.getName();
         String version = machine.getVersion();
-        if (definitionRepository.findByNameAndVersion(name, version).isPresent()) {
-            machines.put(machineKey(name, version), machine);
-            return;
-        }
 
-        List<Map<String, String>> stateEntries = machine.getStates().stream()
-            .map(s -> Map.of("name", s.getName(), "actionClass", s.getAction().getClass().getName())).toList();
+        List<Map<String, Object>> stateEntries = machine.getStates().stream()
+            .map(s -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("name", s.getName());
+                m.put("actionClass", s.getAction().getClass().getName());
+                if (s.isSuspended()) m.put("suspended", true);
+                return m;
+            }).toList();
         List<Map<String, Object>> transitionEntries = machine.getTransitions().stream()
             .map(t -> {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -44,7 +46,11 @@ public class StateMachineRegistry {
                 "backoffFactor", machine.getRetryPolicy().getBackoffFactor()));
         } catch (Exception e) { retryPolicyJson = "{}"; }
 
-        definitionRepository.save(name, version, stateEntries, transitionEntries, retryPolicyJson);
+        if (definitionRepository.findByNameAndVersion(name, version).isPresent()) {
+            definitionRepository.update(name, version, stateEntries, transitionEntries, retryPolicyJson);
+        } else {
+            definitionRepository.save(name, version, stateEntries, transitionEntries, retryPolicyJson);
+        }
         machines.put(machineKey(name, version), machine);
     }
 

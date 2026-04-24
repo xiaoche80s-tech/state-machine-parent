@@ -41,7 +41,7 @@ public class StateMachineAutoConfiguration {
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
-    public BeanPostProcessor stateMachineRegistryPostProcessor(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+    public BeanPostProcessor stateMachineRegistryPostProcessor(StateMachineRegistry registry, JdbcTemplate jdbcTemplate, DdlInitializer ddlInitializer) {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {

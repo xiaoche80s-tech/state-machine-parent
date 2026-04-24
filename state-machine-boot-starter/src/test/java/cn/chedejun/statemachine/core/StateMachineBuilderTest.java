@@ -30,7 +30,7 @@ class StateMachineBuilderTest {
     @Test void build_withoutJdbcTemplate_throwsOnExecute() {
         StateMachine<Context> m = StateMachineBuilder.<Context>builder("no-db")
             .state("step", ctx -> {}).transition("step", "step", ctx -> true).build();
-        assertThrows(StateMachineException.class, () -> m.execute(new Context()));
+        assertThrows(StateMachineException.class, () -> m.execute(new Context(), "biz-no-db"));
     }
 
     @Test void build_withJdbcTemplate_executesSuccessfully() {
@@ -39,7 +39,7 @@ class StateMachineBuilderTest {
             .state("step", ctx -> executed.set(true))
             .retryPolicy(RetryPolicy.none())
             .jdbcTemplate(jdbcTemplate).build();
-        ExecuteResult result = m.execute(new Context());
+        ExecuteResult result = m.execute(new Context(), "biz-builder-test");
         assertTrue(executed.get());
         assertNotNull(result.instanceId());
     }
@@ -75,7 +75,7 @@ class StateMachineBuilderTest {
             .retryPolicy(RetryPolicy.none())
             .jdbcTemplate(jdbcTemplate).build();
 
-        ExecuteResult result = m.execute(new Context());
+        ExecuteResult result = m.execute(new Context(), "biz-builder-test");
 
         assertEquals("COMPLETED", result.status());
         assertEquals("step2", result.currentState());
@@ -95,7 +95,7 @@ class StateMachineBuilderTest {
             .retryPolicy(RetryPolicy.none())
             .jdbcTemplate(jdbcTemplate).build();
 
-        ExecuteResult result = m.execute(new Context());
+        ExecuteResult result = m.execute(new Context(), "biz-builder-test");
 
         assertEquals("SUSPENDED", result.status());
         assertEquals("step2", result.currentState());

@@ -36,10 +36,6 @@ public class StateMachine<C> {
         this.contextClass = contextClass;
     }
 
-    public ExecuteResult execute(C context) {
-        return execute(context, null);
-    }
-
     public ExecuteResult execute(C context, String businessId) {
         ensureInitialized();
         String currentState = states.get(0).getName();

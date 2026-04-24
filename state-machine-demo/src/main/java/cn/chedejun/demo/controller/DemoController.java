@@ -46,7 +46,7 @@ public class DemoController {
         ctx.setShippingAddress(address);
 
         try {
-            ExecuteResult result = orderMachine.execute(ctx);
+            ExecuteResult result = orderMachine.execute(ctx, orderId);
             return Map.of(
                 "success", true,
                 "orderId", orderId,
@@ -177,7 +177,7 @@ public class DemoController {
         ctx.setCarrierCode(carrierCode);
 
         try {
-            ExecuteResult result = outboundMachine.execute(ctx);
+            ExecuteResult result = outboundMachine.execute(ctx, outboundNo);
             return Map.of(
                 "success", true,
                 "outboundNo", outboundNo,
