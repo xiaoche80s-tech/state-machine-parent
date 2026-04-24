@@ -186,6 +186,9 @@ createApp({
                 stateStatus[s.stateName] = s.status === 'SUCCESS' ? 'green' : 'red';
             });
 
+            const suspendedMap = {};
+            if (vers[0].states) vers[0].states.forEach(s => { suspendedMap[s.name] = s.suspended; });
+
             mermaid.initialize({
                 startOnLoad: false,
                 theme: 'base',
@@ -204,7 +207,9 @@ createApp({
 
             let def = 'graph TD\n';
             vers[0].transitions.forEach(t => {
-                def += `    ${t.from}([${t.from}]) --> ${t.to}([${t.to}])\n`;
+                const fromLabel = suspendedMap[t.from] ? `⏸ ${t.from}` : t.from;
+                const toLabel = suspendedMap[t.to] ? `⏸ ${t.to}` : t.to;
+                def += `    ${t.from}([${fromLabel}]) --> ${t.to}([${toLabel}])\n`;
             });
 
             el.textContent = def;
@@ -253,8 +258,8 @@ createApp({
                 if (v.states) v.states.forEach(s => { suspendedMap[s.name] = s.suspended; });
                 let def = 'graph LR\n';
                 v.transitions.forEach(t => {
-                    const fromLabel = suspendedMap[t.from] ? `${t.from} [挂起]` : t.from;
-                    const toLabel = suspendedMap[t.to] ? `${t.to} [挂起]` : t.to;
+                    const fromLabel = suspendedMap[t.from] ? `⏸ ${t.from}` : t.from;
+                    const toLabel = suspendedMap[t.to] ? `⏸ ${t.to}` : t.to;
                     def += `    ${t.from}([${fromLabel}]) --> ${t.to}([${toLabel}])\n`;
                 });
                 el.textContent = def;
@@ -278,6 +283,10 @@ createApp({
                 stateStatus[s.stateName] = s.status === 'SUCCESS' ? 'green' : 'red';
             });
 
+            // Build suspended map from definition states
+            const suspendedMap = {};
+            if (vers[0].states) vers[0].states.forEach(s => { suspendedMap[s.name] = s.suspended; });
+
             mermaid.initialize({
                 startOnLoad: false,
                 theme: 'base',
@@ -297,7 +306,9 @@ createApp({
             let def = 'graph TD\n';
 
             vers[0].transitions.forEach(t => {
-                def += `    ${t.from}([${t.from}]) --> ${t.to}([${t.to}])\n`;
+                const fromLabel = suspendedMap[t.from] ? `⏸ ${t.from}` : t.from;
+                const toLabel = suspendedMap[t.to] ? `⏸ ${t.to}` : t.to;
+                def += `    ${t.from}([${fromLabel}]) --> ${t.to}([${toLabel}])\n`;
             });
 
             el.textContent = def;

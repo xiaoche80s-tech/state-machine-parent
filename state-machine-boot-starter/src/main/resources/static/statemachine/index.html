@@ -221,6 +221,8 @@
                                 <div class="instance-meta">
                                     <span>{{ i.currentState }}</span>
                                     <span class="dot-sep">&middot;</span>
+                                    <span v-if="i.businessId">ID: {{ i.businessId }}</span>
+                                    <span class="dot-sep">&middot;</span>
                                     <span>重试 {{ i.retryCount }}</span>
                                     <span v-if="i.errorMessage" class="dot-sep">&middot;</span>
                                     <span v-if="i.errorMessage" class="instance-error">{{ i.errorMessage }}</span>

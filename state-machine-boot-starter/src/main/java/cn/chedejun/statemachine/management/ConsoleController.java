@@ -71,7 +71,7 @@ public class ConsoleController {
             ? instanceRepository.countByMachineNameAndStatus(name, status)
             : instanceRepository.countByMachineNameAndStatus(name, null);
         var dtos = records.stream().map(r -> new InstanceDTO(r.id(), r.machineName(), r.definitionVersion(),
-            r.currentState(), r.status(), r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
+            r.currentState(), r.status(), r.businessId(), r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
         return Map.of("instances", dtos, "total", total, "page", page, "size", size);
     }
 
@@ -83,7 +83,7 @@ public class ConsoleController {
             .map(s -> new SnapshotDTO(s.id(), s.stateName(), s.inputJson(), s.outputJson(),
                 s.status(), s.errorMessage(), s.attempt(), s.executedAt())).toList();
         var dto = new InstanceDTO(inst.get().id(), inst.get().machineName(), inst.get().definitionVersion(),
-            inst.get().currentState(), inst.get().status(), inst.get().retryCount(),
+            inst.get().currentState(), inst.get().status(), inst.get().businessId(), inst.get().retryCount(),
             inst.get().errorMessage(), inst.get().createdAt(), inst.get().updatedAt());
         return Map.of("instance", dto, "snapshots", snaps);
     }
