@@ -1,5 +1,11 @@
 package cn.chedejun.demo.controller;
 
+import cn.chedejun.demo.dto.OrderCreateRequest;
+import cn.chedejun.demo.dto.OrderResumeByIdRequest;
+import cn.chedejun.demo.dto.OrderResumeRequest;
+import cn.chedejun.demo.dto.OutboundCreateRequest;
+import cn.chedejun.demo.dto.OutboundResumeByIdRequest;
+import cn.chedejun.demo.dto.OutboundResumeRequest;
 import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.demo.statemachine.OutboundContext;
 import cn.chedejun.statemachine.core.ExecuteResult;
@@ -36,11 +42,11 @@ public class DemoController {
      * 触发订单流程
      */
     @PostMapping("/order")
-    public Map<String, Object> createOrder(@RequestBody Map<String, Object> params) {
+    public Map<String, Object> createOrder(@RequestBody OrderCreateRequest req) {
         String orderId = UUID.randomUUID().toString().substring(0, 8);
-        int stock = (int) params.getOrDefault("stock", 10);
-        double amount = ((Number) params.getOrDefault("amount", 99.99)).doubleValue();
-        String address = (String) params.getOrDefault("address", "北京市朝阳区");
+        int stock = req.stock() != 0 ? req.stock() : 10;
+        double amount = req.amount() != 0 ? req.amount() : 99.99;
+        String address = req.address() != null && !req.address().isBlank() ? req.address() : "北京市朝阳区";
 
         OrderContext ctx = new OrderContext(orderId, stock, amount);
         ctx.setShippingAddress(address);
@@ -56,80 +62,63 @@ public class DemoController {
                 "message", "订单执行完成"
             );
         } catch (StateMachineException e) {
-            var instances = instanceRepository.findByMachineName("order-process", 0, 1);
-            String instanceId = instances.isEmpty() ? "unknown" : instances.get(0).id();
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "orderId", orderId,
-                "instanceId", instanceId,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
 
     /**
      * 恢复挂起的订单实例
-     * 用于演示 suspendState 用法：当状态机在挂起点暂停后，可通过此接口恢复
      */
     @PostMapping("/order/resume")
-    public Map<String, Object> resumeOrder(@RequestBody Map<String, Object> params) {
-        String businessId = (String) params.get("businessId");
-        String expectedCurrentState = (String) params.get("expectedCurrentState");
-        String shippingAddress = (String) params.get("shippingAddress");
-
-        if (businessId == null || businessId.isBlank()) {
+    public Map<String, Object> resumeOrder(@RequestBody OrderResumeRequest req) {
+        if (req.businessId() == null || req.businessId().isBlank()) {
             return Map.of("success", false, "message", "缺少 businessId 参数");
         }
-        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
             return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
         }
 
         try {
-            orderMachine.resumeByBusinessId("order-process", businessId, expectedCurrentState, ctx -> {
-                if (shippingAddress != null && !shippingAddress.isBlank()) {
-                    ctx.setShippingAddress(shippingAddress);
+            orderMachine.resumeByBusinessId("order-process", req.businessId(), req.expectedCurrentState(), ctx -> {
+                if (req.shippingAddress() != null && !req.shippingAddress().isBlank()) {
+                    ctx.setShippingAddress(req.shippingAddress());
                 }
             });
-            // resumeByBusinessId 内部会更新实例状态，返回成功即可
             return Map.of(
                 "success", true,
-                "businessId", businessId,
+                "businessId", req.businessId(),
                 "message", "订单已恢复执行，请查询 /demo/orders 查看最新状态"
             );
         } catch (StateMachineException e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
 
     /**
      * 通过实例 ID 恢复挂起的订单实例
-     * 用于场景：只有实例 ID，没有业务 ID 的情况
      */
     @PostMapping("/order/resume/{instanceId}")
     public Map<String, Object> resumeOrderById(@PathVariable String instanceId,
-                                               @RequestBody Map<String, Object> params) {
-        String expectedCurrentState = (String) params.get("expectedCurrentState");
-        String shippingAddress = (String) params.get("shippingAddress");
-
-        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+                                               @RequestBody OrderResumeByIdRequest req) {
+        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
             return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
         }
 
         try {
-            orderMachine.resumeByInstanceId(instanceId, expectedCurrentState, ctx -> {
-                if (shippingAddress != null && !shippingAddress.isBlank()) {
-                    ctx.setShippingAddress(shippingAddress);
+            orderMachine.resumeByInstanceId(instanceId, req.expectedCurrentState(), ctx -> {
+                if (req.shippingAddress() != null && !req.shippingAddress().isBlank()) {
+                    ctx.setShippingAddress(req.shippingAddress());
                 }
             });
             return Map.of(
@@ -138,13 +127,11 @@ public class DemoController {
                 "message", "订单已恢复执行"
             );
         } catch (StateMachineException e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
@@ -191,7 +178,7 @@ public class DemoController {
     }
 
     /**
-     * 重试失败订单（自动从快照恢复 context）
+     * 重试失败订单
      */
     @PostMapping("/orders/{id}/retry")
     public Map<String, String> retryOrder(@PathVariable String id) {
@@ -206,11 +193,11 @@ public class DemoController {
      * 触发出库流程
      */
     @PostMapping("/outbound")
-    public Map<String, Object> createOutbound(@RequestBody Map<String, Object> params) {
+    public Map<String, Object> createOutbound(@RequestBody OutboundCreateRequest req) {
         String outboundNo = "OB-" + UUID.randomUUID().toString().substring(0, 8);
-        String warehouseCode = (String) params.getOrDefault("warehouseCode", "WH01");
-        int totalQty = (int) params.getOrDefault("totalQty", 100);
-        String carrierCode = (String) params.getOrDefault("carrierCode", "SF");
+        String warehouseCode = req.warehouseCode() != null && !req.warehouseCode().isBlank() ? req.warehouseCode() : "WH01";
+        int totalQty = req.totalQty() != 0 ? req.totalQty() : 100;
+        String carrierCode = req.carrierCode() != null && !req.carrierCode().isBlank() ? req.carrierCode() : "SF";
 
         OutboundContext ctx = new OutboundContext(outboundNo, warehouseCode, totalQty);
         ctx.setCarrierCode(carrierCode);
@@ -226,58 +213,45 @@ public class DemoController {
                 "message", result.status()
             );
         } catch (StateMachineException e) {
-            var instances = instanceRepository.findByMachineName("outbound-process", 0, 1);
-            String instanceId = instances.isEmpty() ? "unknown" : instances.get(0).id();
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "outboundNo", outboundNo,
-                "instanceId", instanceId,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
 
     /**
      * 恢复挂起的出库实例
-     * 用于演示 suspendState 用法：当状态机在挂起点暂停后，可通过此接口恢复
      */
     @PostMapping("/outbound/resume")
-    public Map<String, Object> resumeOutbound(@RequestBody Map<String, Object> params) {
-        String businessId = (String) params.get("businessId");
-        String expectedCurrentState = (String) params.get("expectedCurrentState");
-        String carrierCode = (String) params.get("carrierCode");
-
-        if (businessId == null || businessId.isBlank()) {
+    public Map<String, Object> resumeOutbound(@RequestBody OutboundResumeRequest req) {
+        if (req.businessId() == null || req.businessId().isBlank()) {
             return Map.of("success", false, "message", "缺少 businessId 参数");
         }
-        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
             return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
         }
 
         try {
-            outboundMachine.resumeByBusinessId("outbound-process", businessId, expectedCurrentState, ctx -> {
-                if (carrierCode != null && !carrierCode.isBlank()) {
-                    ctx.setCarrierCode(carrierCode);
+            outboundMachine.resumeByBusinessId("outbound-process", req.businessId(), req.expectedCurrentState(), ctx -> {
+                if (req.carrierCode() != null && !req.carrierCode().isBlank()) {
+                    ctx.setCarrierCode(req.carrierCode());
                 }
             });
-            // resumeByBusinessId 内部会更新实例状态，返回成功即可
             return Map.of(
                 "success", true,
-                "businessId", businessId,
+                "businessId", req.businessId(),
                 "message", "出库已恢复执行，请查询 /demo/outbounds 查看最新状态"
             );
         } catch (StateMachineException e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
@@ -287,18 +261,15 @@ public class DemoController {
      */
     @PostMapping("/outbound/resume/{instanceId}")
     public Map<String, Object> resumeOutboundById(@PathVariable String instanceId,
-                                                  @RequestBody Map<String, Object> params) {
-        String expectedCurrentState = (String) params.get("expectedCurrentState");
-        String carrierCode = (String) params.get("carrierCode");
-
-        if (expectedCurrentState == null || expectedCurrentState.isBlank()) {
+                                                  @RequestBody OutboundResumeByIdRequest req) {
+        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
             return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
         }
 
         try {
-            outboundMachine.resumeByInstanceId(instanceId, expectedCurrentState, ctx -> {
-                if (carrierCode != null && !carrierCode.isBlank()) {
-                    ctx.setCarrierCode(carrierCode);
+            outboundMachine.resumeByInstanceId(instanceId, req.expectedCurrentState(), ctx -> {
+                if (req.carrierCode() != null && !req.carrierCode().isBlank()) {
+                    ctx.setCarrierCode(req.carrierCode());
                 }
             });
             return Map.of(
@@ -307,13 +278,11 @@ public class DemoController {
                 "message", "出库已恢复执行"
             );
         } catch (StateMachineException e) {
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
             return Map.of(
                 "success", false,
                 "status", "FAILED",
                 "message", e.getMessage(),
-                "stackTrace", sw.toString()
+                "stackTrace", stackTrace(e)
             );
         }
     }
@@ -357,5 +326,11 @@ public class DemoController {
                 "businessId", instance.get().businessId() != null ? instance.get().businessId() : ""),
             "snapshots", snaps
         );
+    }
+
+    private String stackTrace(Throwable e) {
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
+        return sw.toString();
     }
 }
