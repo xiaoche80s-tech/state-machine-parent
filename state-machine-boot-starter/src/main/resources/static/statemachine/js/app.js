@@ -53,6 +53,7 @@ createApp({
         const totalMachines = computed(() => machines.value.length);
         const totalRunning = computed(() => machines.value.reduce((s, m) => s + m.runningInstances, 0));
         const totalFailed = computed(() => machines.value.reduce((s, m) => s + m.failedInstances, 0));
+        const totalSuspended = computed(() => machines.value.reduce((s, m) => s + m.suspendedInstances, 0));
         const currentMachineStats = computed(() => machines.value.find(m => m.name === machineName.value));
 
         function shortId(id) { return id ? id.substring(0, 8) + '\u2026' : ''; }
@@ -678,7 +679,7 @@ createApp({
 
         return {
             currentView, machines, machineName, versions, instances, filterStatus, instanceDetail, expanded, loading,
-            totalMachines, totalRunning, totalFailed, currentMachineStats, machineInstances, machineFilterStatus,
+            totalMachines, totalRunning, totalFailed, totalSuspended, currentMachineStats, machineInstances, machineFilterStatus,
             machinePage, machinePageSize, machineTotalPages, machineTotalElements,
             shortId, statusClass, statusLabel, shortJson, formatJson, toggle,
             relativeTime, formatTime, formatTimeShort,

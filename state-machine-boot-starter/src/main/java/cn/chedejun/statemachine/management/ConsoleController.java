@@ -38,7 +38,8 @@ public class ConsoleController {
             return Map.<String, Object>of(
                 "name", name, "versionCount", versions.size(),
                 "runningInstances", instanceRepository.countByMachineNameAndStatus(name, "RUNNING"),
-                "failedInstances", instanceRepository.countByMachineNameAndStatus(name, "FAILED"));
+                "failedInstances", instanceRepository.countByMachineNameAndStatus(name, "FAILED"),
+                "suspendedInstances", instanceRepository.countByMachineNameAndStatus(name, "SUSPENDED"));
         }).toList();
     }
 

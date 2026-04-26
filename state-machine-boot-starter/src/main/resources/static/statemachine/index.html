@@ -94,6 +94,15 @@
                             <span class="stat-label">失败</span>
                         </div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon--blue">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value">{{ totalSuspended }}</span>
+                            <span class="stat-label">已挂起</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="card" v-if="machines.length">
@@ -114,6 +123,10 @@
                                 <div class="mc-stat">
                                     <span class="mc-stat-dot" :class="m.failedInstances > 0 ? 'mc-stat-dot--red' : 'mc-stat-dot--gray'"></span>
                                     <span class="mc-stat-value">{{ m.failedInstances }} 失败</span>
+                                </div>
+                                <div class="mc-stat">
+                                    <span class="mc-stat-dot mc-stat-dot--blue"></span>
+                                    <span class="mc-stat-value">{{ m.suspendedInstances }} 已挂起</span>
                                 </div>
                             </div>
                             <div class="mc-actions">
@@ -197,6 +210,15 @@
                             <div class="stat-info">
                                 <span class="stat-value">{{ currentMachineStats?.failedInstances || 0 }}</span>
                                 <span class="stat-label">失败</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon stat-icon--blue">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                            </div>
+                            <div class="stat-info">
+                                <span class="stat-value">{{ currentMachineStats?.suspendedInstances || 0 }}</span>
+                                <span class="stat-label">已挂起</span>
                             </div>
                         </div>
                     </div>

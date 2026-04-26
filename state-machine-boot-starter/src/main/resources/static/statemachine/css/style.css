@@ -327,6 +327,7 @@ a:hover { color: var(--primary-light); }
 }
 .mc-stat-dot--green { background: var(--green); }
 .mc-stat-dot--red { background: var(--red); }
+.mc-stat-dot--blue { background: var(--primary); }
 .mc-stat-dot--gray { background: var(--gray-300); }
 .mc-stat-value { font-weight: 500; }
 
