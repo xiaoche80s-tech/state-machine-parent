@@ -371,11 +371,42 @@ createApp({
             if (!vers.length || !vers[0].transitions) return;
 
             const stateStatus = {};
+            const stateHasSuccess = {}; // track if a state ever succeeded
             drawerSnapshots.value.forEach(s => {
+                // Always track success
+                if (s.status === 'SUCCESS') stateHasSuccess[s.stateName] = true;
+                // State status: once red, stays red (unless later succeeded)
                 const prev = stateStatus[s.stateName];
-                if (prev === 'red') return;
+                if (prev === 'red' && s.status !== 'SUCCESS') return;
                 stateStatus[s.stateName] = s.status === 'SUCCESS' ? 'green' : 'red';
             });
+
+            // Determine which transitions were actually traversed
+            // Compress snapshots to unique consecutive states, then check edges
+            const traversedEdges = new Set();
+            const uniqueStates = [];
+            let lastState = null;
+            drawerSnapshots.value.forEach(s => {
+                if (s.stateName !== lastState) {
+                    uniqueStates.push(s.stateName);
+                    lastState = s.stateName;
+                }
+            });
+            for (let i = 0; i < uniqueStates.length - 1; i++) {
+                const from = uniqueStates[i];
+                const to = uniqueStates[i + 1];
+                if (stateHasSuccess[from]) {
+                    traversedEdges.add(from + '-->' + to);
+                }
+            }
+            // For COMPLETED instances, also mark the last state's outgoing edge (drawer)
+            if (inst.status === 'COMPLETED' && uniqueStates.length > 0) {
+                const lastSt = uniqueStates[uniqueStates.length - 1];
+                const matchedTransition = vers[0].transitions.find(t => t.from === lastSt);
+                if (matchedTransition && stateHasSuccess[lastSt]) {
+                    traversedEdges.add(lastSt + '-->' + matchedTransition.to);
+                }
+            }
 
             const suspendedMap = {};
             if (vers[0].states) vers[0].states.forEach(s => { suspendedMap[s.name] = s.suspended; });
@@ -404,11 +435,15 @@ createApp({
             });
 
             el.textContent = def;
+            // Force mermaid to re-render by giving a unique id each time
+            el.removeAttribute('data-processed');
+            el.id = 'drawer-graph-' + Date.now();
             try {
                 await mermaid.run({ nodes: [el] });
                 await new Promise(r => requestAnimationFrame(r));
                 const svg = el.querySelector('svg');
                 if (!svg) return;
+                // Inject CSS to color nodes and edges
                 let css = '';
                 for (const [stateName, status] of Object.entries(stateStatus)) {
                     const nodeId = 'flowchart-' + stateName.toLowerCase();
@@ -418,9 +453,42 @@ createApp({
                     css += `*[id^="${nodeId}"] rect, *[id^="${nodeId}"] circle, *[id^="${nodeId}"] path { fill:${colors.fill}!important; stroke:${colors.stroke}!important; }\n`;
                     css += `*[id^="${nodeId}"] text, *[id^="${nodeId}"] tspan { fill:${colors.text}!important; }\n`;
                 }
+                // Color traversed edges green (mermaid uses class: flowchart-link LS-{from} LE-{to})
+                for (const edge of traversedEdges) {
+                    const [from, to] = edge.split('-->');
+                    css += `.flowchart-link.LS-${from}.LE-${to} { stroke:#10b981!important; stroke-width:2.5!important; }\n`;
+                }
                 const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
                 styleEl.textContent = css;
                 svg.insertBefore(styleEl, svg.firstChild);
+                // Direct DOM manipulation as SVG <style> !important can be overridden by later rules
+                for (const edge of traversedEdges) {
+                    const [from, to] = edge.split('-->');
+                    const sel = `.flowchart-link.LS-${from}.LE-${to}`;
+                    svg.querySelectorAll(sel).forEach(p => {
+                        p.style.stroke = '#10b981';
+                        p.style.strokeWidth = '2.5';
+                    });
+                }
+                // Color arrow markers green for traversed edges
+                const origMarker = svg.querySelector('marker[id$="_flowchart-pointEnd"]');
+                if (origMarker) {
+                    const greenMarker = origMarker.cloneNode(true);
+                    greenMarker.id = origMarker.id.replace('pointEnd', 'pointEnd-green');
+                    greenMarker.querySelectorAll('path').forEach(p => {
+                        p.style.fill = '#10b981';
+                        p.style.stroke = '#10b981';
+                    });
+                    origMarker.parentElement.appendChild(greenMarker);
+                    const greenRef = `url(#${greenMarker.id})`;
+                    for (const edge of traversedEdges) {
+                        const [from, to] = edge.split('-->');
+                        const sel = `.flowchart-link.LS-${from}.LE-${to}`;
+                        svg.querySelectorAll(sel).forEach(p => {
+                            p.setAttribute('marker-end', greenRef);
+                        });
+                    }
+                }
             } catch (e) {
                 console.error('Mermaid render failed:', e);
             }
@@ -467,13 +535,44 @@ createApp({
             const vers = await API.getVersions(inst.machineName);
             if (!vers.length || !vers[0].transitions) return;
 
-            // Collect snapshot statuses per state
+            // Collect snapshot statuses per state, and build ordered state sequence
             const stateStatus = {};
+            const stateHasSuccess = {};
             instanceDetail.value.snapshots.forEach(s => {
+                // Always track success
+                if (s.status === 'SUCCESS') stateHasSuccess[s.stateName] = true;
+                // State status: once red, stays red (unless later succeeded)
                 const prev = stateStatus[s.stateName];
-                if (prev === 'red') return; // already failed, stays red
+                if (prev === 'red' && s.status !== 'SUCCESS') return;
                 stateStatus[s.stateName] = s.status === 'SUCCESS' ? 'green' : 'red';
             });
+
+            // Determine which transitions were actually traversed
+            // Compress snapshots to unique consecutive states, then check edges
+            const traversedEdges = new Set();
+            const uniqueStates = [];
+            let lastState = null;
+            instanceDetail.value.snapshots.forEach(s => {
+                if (s.stateName !== lastState) {
+                    uniqueStates.push(s.stateName);
+                    lastState = s.stateName;
+                }
+            });
+            for (let i = 0; i < uniqueStates.length - 1; i++) {
+                const from = uniqueStates[i];
+                const to = uniqueStates[i + 1];
+                if (stateHasSuccess[from]) {
+                    traversedEdges.add(from + '-->' + to);
+                }
+            }
+            // For COMPLETED instances, also mark the last state's outgoing edge
+            if (inst.status === 'COMPLETED' && uniqueStates.length > 0) {
+                const lastSt = uniqueStates[uniqueStates.length - 1];
+                const matchedTransition = vers[0].transitions.find(t => t.from === lastSt);
+                if (matchedTransition && stateHasSuccess[lastSt]) {
+                    traversedEdges.add(lastSt + '-->' + matchedTransition.to);
+                }
+            }
 
             // Build suspended map from definition states
             const suspendedMap = {};
@@ -504,10 +603,12 @@ createApp({
             });
 
             el.textContent = def;
+            el.removeAttribute('data-processed');
+            el.id = 'instance-mermaid-' + Date.now();
             try {
                 await mermaid.run({ nodes: [el] });
                 await new Promise(r => requestAnimationFrame(r));
-                // Inject CSS to color nodes
+                // Inject CSS to color nodes and edges
                 const svg = el.querySelector('svg');
                 if (!svg) return;
                 let css = '';
@@ -519,9 +620,42 @@ createApp({
                     css += `*[id^="${nodeId}"] rect, *[id^="${nodeId}"] circle, *[id^="${nodeId}"] path { fill:${colors.fill}!important; stroke:${colors.stroke}!important; }\n`;
                     css += `*[id^="${nodeId}"] text, *[id^="${nodeId}"] tspan { fill:${colors.text}!important; }\n`;
                 }
+                // Color traversed edges green (mermaid uses class: flowchart-link LS-{from} LE-{to})
+                for (const edge of traversedEdges) {
+                    const [from, to] = edge.split('-->');
+                    css += `.flowchart-link.LS-${from}.LE-${to} { stroke:#10b981!important; stroke-width:2.5!important; }\n`;
+                }
                 const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
                 styleEl.textContent = css;
                 svg.insertBefore(styleEl, svg.firstChild);
+                // Direct DOM manipulation as SVG <style> !important can be overridden by later rules
+                for (const edge of traversedEdges) {
+                    const [from, to] = edge.split('-->');
+                    const sel = `.flowchart-link.LS-${from}.LE-${to}`;
+                    svg.querySelectorAll(sel).forEach(p => {
+                        p.style.stroke = '#10b981';
+                        p.style.strokeWidth = '2.5';
+                    });
+                }
+                // Color arrow markers green for traversed edges
+                const origMarker = svg.querySelector('marker[id$="_flowchart-pointEnd"]');
+                if (origMarker) {
+                    const greenMarker = origMarker.cloneNode(true);
+                    greenMarker.id = origMarker.id.replace('pointEnd', 'pointEnd-green');
+                    greenMarker.querySelectorAll('path').forEach(p => {
+                        p.style.fill = '#10b981';
+                        p.style.stroke = '#10b981';
+                    });
+                    origMarker.parentElement.appendChild(greenMarker);
+                    const greenRef = `url(#${greenMarker.id})`;
+                    for (const edge of traversedEdges) {
+                        const [from, to] = edge.split('-->');
+                        const sel = `.flowchart-link.LS-${from}.LE-${to}`;
+                        svg.querySelectorAll(sel).forEach(p => {
+                            p.setAttribute('marker-end', greenRef);
+                        });
+                    }
+                }
             } catch (e) {
                 console.error('Mermaid render failed:', e);
             }

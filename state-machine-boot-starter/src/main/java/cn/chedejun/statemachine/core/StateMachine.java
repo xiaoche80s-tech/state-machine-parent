@@ -103,7 +103,7 @@ public class StateMachine<C> {
     }
 
     /**
-     * 重试失败的实例，自动从首次快照读取并反序列化 context
+     * 重试失败的实例，自动从最后一个失败快照的 IN 参数读取并反序列化 context
      */
     public void retry(String instanceId) {
         ensureInitialized();
@@ -112,9 +112,12 @@ public class StateMachine<C> {
         if (!"FAILED".equals(instance.status()))
             throw new StateMachineException("Can only retry FAILED instances, current status: " + instance.status());
 
-        // 从首次快照获取原始 context
+        // 从最后一个失败快照的 IN 参数恢复 context
         var snapshots = snapshotRepository.findByInstanceId(instanceId);
-        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(0).inputJson();
+        String contextJson = snapshots.isEmpty() ? "{}"
+            : snapshots.stream().filter(s -> "FAILED".equals(s.status()))
+                .max(Comparator.comparing(SnapshotRepository.SnapshotRecord::executedAt))
+                .map(SnapshotRepository.SnapshotRecord::inputJson).orElse("{}");
         C context = deserialize(contextJson);
 
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
