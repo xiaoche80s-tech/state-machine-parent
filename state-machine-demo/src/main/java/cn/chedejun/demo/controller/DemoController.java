@@ -1,10 +1,8 @@
 package cn.chedejun.demo.controller;
 
 import cn.chedejun.demo.dto.OrderCreateRequest;
-import cn.chedejun.demo.dto.OrderResumeByIdRequest;
 import cn.chedejun.demo.dto.OrderResumeRequest;
 import cn.chedejun.demo.dto.OutboundCreateRequest;
-import cn.chedejun.demo.dto.OutboundResumeByIdRequest;
 import cn.chedejun.demo.dto.OutboundResumeRequest;
 import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.demo.statemachine.OutboundContext;
@@ -94,37 +92,6 @@ public class DemoController {
                 "success", true,
                 "businessId", req.businessId(),
                 "message", "订单已恢复执行，请查询 /demo/orders 查看最新状态"
-            );
-        } catch (StateMachineException e) {
-            return Map.of(
-                "success", false,
-                "status", "FAILED",
-                "message", e.getMessage(),
-                "stackTrace", stackTrace(e)
-            );
-        }
-    }
-
-    /**
-     * 通过实例 ID 恢复挂起的订单实例
-     */
-    @PostMapping("/order/resume/{instanceId}")
-    public Map<String, Object> resumeOrderById(@PathVariable String instanceId,
-                                               @RequestBody OrderResumeByIdRequest req) {
-        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
-            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
-        }
-
-        try {
-            orderMachine.resumeByInstanceId(instanceId, req.expectedCurrentState(), ctx -> {
-                if (req.shippingAddress() != null && !req.shippingAddress().isBlank()) {
-                    ctx.setShippingAddress(req.shippingAddress());
-                }
-            });
-            return Map.of(
-                "success", true,
-                "instanceId", instanceId,
-                "message", "订单已恢复执行"
             );
         } catch (StateMachineException e) {
             return Map.of(
@@ -245,37 +212,6 @@ public class DemoController {
                 "success", true,
                 "businessId", req.businessId(),
                 "message", "出库已恢复执行，请查询 /demo/outbounds 查看最新状态"
-            );
-        } catch (StateMachineException e) {
-            return Map.of(
-                "success", false,
-                "status", "FAILED",
-                "message", e.getMessage(),
-                "stackTrace", stackTrace(e)
-            );
-        }
-    }
-
-    /**
-     * 通过实例 ID 恢复挂起的出库实例
-     */
-    @PostMapping("/outbound/resume/{instanceId}")
-    public Map<String, Object> resumeOutboundById(@PathVariable String instanceId,
-                                                  @RequestBody OutboundResumeByIdRequest req) {
-        if (req.expectedCurrentState() == null || req.expectedCurrentState().isBlank()) {
-            return Map.of("success", false, "message", "缺少 expectedCurrentState 参数");
-        }
-
-        try {
-            outboundMachine.resumeByInstanceId(instanceId, req.expectedCurrentState(), ctx -> {
-                if (req.carrierCode() != null && !req.carrierCode().isBlank()) {
-                    ctx.setCarrierCode(req.carrierCode());
-                }
-            });
-            return Map.of(
-                "success", true,
-                "instanceId", instanceId,
-                "message", "出库已恢复执行"
             );
         } catch (StateMachineException e) {
             return Map.of(
