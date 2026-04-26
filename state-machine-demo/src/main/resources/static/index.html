@@ -3,19 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>状态机演示 - 订单处理</title>
+    <title>状态机演示</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
-        .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-        h1 { font-size: 24px; margin-bottom: 24px; color: #1a1a2e; }
-        h2 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 24px; margin-bottom: 16px; color: #1a1a2e; }
 
-        .grid { display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+        .tab {
+            padding: 10px 20px; font-size: 14px; font-weight: 600; color: #6b7280;
+            cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent;
+            margin-bottom: -2px; transition: all 0.2s;
+        }
+        .tab:hover { color: #4f46e5; }
+        .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .grid { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
 
         .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
-        /* Form */
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; font-weight: 500; }
         .form-group input, .form-group select {
@@ -35,41 +45,37 @@
         .btn-sm { padding: 6px 12px; font-size: 12px; }
         .btn-outline { background: transparent; border: 1px solid #4f46e5; color: #4f46e5; }
         .btn-outline:hover { background: #eef2ff; }
+        .btn-resume { background: #f59e0b; color: #fff; }
+        .btn-resume:hover { background: #d97706; }
+        .btn-retry { background: #ef4444; color: #fff; }
+        .btn-retry:hover { background: #dc2626; }
 
-        /* Flow diagram */
-        .flow { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
-        .flow-step {
-            padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
-            background: #e5e7eb; color: #374151; transition: all 0.3s;
-        }
-        .flow-step.active { background: #dbeafe; color: #1d4ed8; box-shadow: 0 0 0 2px #93c5fd; }
-        .flow-step.success { background: #dcfce7; color: #166534; }
-        .flow-step.fail { background: #fee2e2; color: #991b1b; }
-        .flow-arrow { color: #9ca3af; font-size: 18px; }
-
-        /* Result */
         .result { margin-top: 16px; padding: 16px; border-radius: 8px; font-size: 14px; display: none; }
         .result.show { display: block; }
         .result.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
         .result.fail { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+        .result.suspended { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
 
         /* Orders list */
-        .orders { margin-top: 24px; }
+        .orders { margin-top: 12px; }
         .order-item {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 0; border-bottom: 1px solid #f0f0f0;
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; transition: background 0.15s;
         }
-        .order-item:last-child { border-bottom: none; }
+        .order-item:hover { background: #f9fafb; }
         .order-id { font-family: monospace; font-size: 13px; color: #6b7280; }
         .order-info { flex: 1; }
 
         .badge {
             display: inline-block; padding: 3px 10px; border-radius: 12px;
-            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            font-size: 11px; font-weight: 600;
         }
-        .badge-running { background: #fef3c7; color: #92400e; }
+        .badge-running, .badge-reached { background: #fef3c7; color: #92400e; }
         .badge-completed { background: #dcfce7; color: #166534; }
         .badge-failed { background: #fee2e2; color: #991b1b; }
+        .badge-suspended { background: #dbeafe; color: #1d4ed8; }
+
+        .action-btns { display: flex; gap: 6px; }
 
         /* Snapshots */
         .snapshots { margin-top: 12px; }
@@ -81,77 +87,139 @@
         .snapshot .time { color: #9ca3af; font-family: monospace; font-size: 12px; }
 
         .loading { text-align: center; color: #9ca3af; padding: 24px; }
+
+        /* Resume modal */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #fff; border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+        }
+        .modal h3 { font-size: 16px; margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>&#x1F680; 状态机演示 — 订单处理流程</h1>
+    <h1>&#x1F680; 状态机演示</h1>
 
-    <!-- Flow Diagram -->
-    <div class="flow">
-        <span class="flow-step" id="f-check">检查库存</span>
-        <span class="flow-arrow">&rarr;</span>
-        <span class="flow-step" id="f-pay">处理支付</span>
-        <span class="flow-arrow">&rarr;</span>
-        <span class="flow-step" id="f-ship">订单发货</span>
-        <span class="flow-arrow">&rarr;</span>
-        <span class="flow-step" id="f-notify">发送通知</span>
+    <div class="tabs">
+        <button class="tab active" data-tab="order">订单处理</button>
+        <button class="tab" data-tab="outbound">出库流程</button>
     </div>
 
-    <div class="grid">
-        <!-- Left: Form -->
-        <div>
-            <div class="card">
-                <h2>&#x1F6D2; 创建订单</h2>
-                <div class="form-group">
-                    <label>库存数量</label>
-                    <input type="number" id="stock" value="10" min="-1">
+    <!-- Order Process Tab -->
+    <div class="tab-content active" id="tab-order">
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>&#x1F6D2; 创建订单</h2>
+                    <div class="form-group">
+                        <label>库存数量</label>
+                        <input type="number" id="stock" value="10" min="-1">
+                    </div>
+                    <div class="form-group">
+                        <label>订单金额 (&yen;)</label>
+                        <input type="number" id="amount" value="99.99" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>收货地址</label>
+                        <input type="text" id="address" value="北京市朝阳区望京路88号">
+                    </div>
+                    <button class="btn btn-primary" id="submitBtn" onclick="createOrder()">&#x1F4E6; 提交订单</button>
+                    <div class="result" id="result"></div>
                 </div>
-                <div class="form-group">
-                    <label>订单金额 (&yen;)</label>
-                    <input type="number" id="amount" value="99.99" step="0.01" min="0">
+                <div class="card" style="margin-top:16px">
+                    <h2>&#x1F4CA; 流程快照</h2>
+                    <div class="snapshots" id="snapshots"><div class="loading">暂无数据</div></div>
                 </div>
-                <div class="form-group">
-                    <label>收货地址</label>
-                    <input type="text" id="address" value="北京市朝阳区望京路88号">
-                </div>
-                <button class="btn btn-primary" id="submitBtn" onclick="createOrder()">
-                    &#x1F4E6; 提交订单
-                </button>
-                <div class="result" id="result"></div>
             </div>
-
-            <div class="card" style="margin-top:16px">
-                <h2>&#x1F4CA; 流程快照</h2>
-                <div class="snapshots" id="snapshots">
-                    <div class="loading">暂无数据</div>
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h2 style="margin:0">&#x1F4CB; 最近订单</h2>
+                    <button class="btn btn-sm btn-outline" onclick="loadOrders()">&#x1F504; 刷新</button>
                 </div>
+                <div class="orders" id="orders"><div class="loading">加载中...</div></div>
             </div>
         </div>
+    </div>
 
-        <!-- Right: Orders -->
-        <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                <h2 style="margin:0">&#x1F4CB; 最近订单</h2>
-                <button class="btn btn-sm btn-outline" onclick="loadOrders()">&#x1F504; 刷新</button>
+    <!-- Outbound Process Tab -->
+    <div class="tab-content" id="tab-outbound">
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>&#x1F4E6; 触发出库</h2>
+                    <div class="form-group">
+                        <label>仓库编号</label>
+                        <input type="text" id="warehouseCode" value="WH01">
+                    </div>
+                    <div class="form-group">
+                        <label>出库数量</label>
+                        <input type="number" id="totalQty" value="100" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>快递公司</label>
+                        <input type="text" id="carrierCode" value="SF">
+                    </div>
+                    <button class="btn btn-primary" id="obSubmitBtn" onclick="createOutbound()">&#x1F4E6; 触发出库</button>
+                    <div class="result" id="obResult"></div>
+                </div>
+                <div class="card" style="margin-top:16px">
+                    <h2>&#x1F4CA; 流程快照</h2>
+                    <div class="snapshots" id="obSnapshots"><div class="loading">暂无数据</div></div>
+                </div>
             </div>
-            <div class="orders" id="orders">
-                <div class="loading">加载中...</div>
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h2 style="margin:0">&#x1F4CB; 最近出库单</h2>
+                    <button class="btn btn-sm btn-outline" onclick="loadOutbounds()">&#x1F504; 刷新</button>
+                </div>
+                <div class="orders" id="outbounds"><div class="loading">加载中...</div></div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Resume Modal -->
+<div class="modal-overlay" id="resumeModal">
+    <div class="modal">
+        <h3>&#x25B6; 恢复挂起实例</h3>
+        <div class="form-group">
+            <label>实例 ID</label>
+            <div style="font-family:monospace;font-size:13px;color:#555;padding:8px;background:#f9fafb;border-radius:6px" id="resumeInstanceId"></div>
+        </div>
+        <div class="form-group">
+            <label>当前状态</label>
+            <div style="font-family:monospace;font-size:13px;color:#555;padding:8px;background:#f9fafb;border-radius:6px" id="resumeCurrentState"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-sm btn-outline" onclick="closeResumeModal()">取消</button>
+            <button class="btn btn-sm btn-resume" id="resumeConfirmBtn" onclick="confirmResume()">恢复执行</button>
+        </div>
+    </div>
+</div>
+
 <script>
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        });
+    });
+
+    // ===== Order Process =====
     async function createOrder() {
         const btn = document.getElementById('submitBtn');
         const result = document.getElementById('result');
-        btn.disabled = true;
-        btn.textContent = '执行中...';
+        btn.disabled = true; btn.textContent = '执行中...';
         result.className = 'result';
-
-        // Reset flow
-        document.querySelectorAll('.flow-step').forEach(el => { el.className = 'flow-step'; });
 
         const body = {
             stock: parseInt(document.getElementById('stock').value),
@@ -161,71 +229,44 @@
 
         try {
             const res = await fetch('/demo/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
             const data = await res.json();
-
-            result.className = 'result show ' + (data.success ? 'success' : 'fail');
+            result.className = 'result show ' + (data.success ? (data.status === 'SUSPENDED' ? 'suspended' : 'success') : 'fail');
             result.innerHTML = `
                 <strong>${data.success ? '&#x2705; 成功' : '&#x274C; 失败'}</strong><br>
                 订单号: <code>${data.orderId}</code><br>
                 实例ID: <code>${data.instanceId}</code><br>
                 状态: ${data.status}<br>
-                ${data.message}
+                ${data.message || ''}
             `;
-
-            // Animate flow
-            animateFlow(data.instanceId);
-
-            // Refresh orders
+            showSnapshots(data.instanceId, 'order');
             loadOrders();
         } catch (e) {
             result.className = 'result show fail';
             result.innerHTML = `<strong>&#x274C; 请求失败</strong><br>${e.message}`;
         } finally {
-            btn.disabled = false;
-            btn.innerHTML = '&#x1F4E6; 提交订单';
+            btn.disabled = false; btn.innerHTML = '&#x1F4E6; 提交订单';
         }
     }
 
-    async function animateFlow(instanceId) {
+    async function showSnapshots(instanceId, type) {
+        const prefix = type === 'outbound' ? 'ob' : '';
+        const el = document.getElementById(prefix + 'snapshots');
         try {
-            const res = await fetch(`/demo/orders/${instanceId}`);
+            const res = await fetch(`/demo/${type}s/${instanceId}`);
             const data = await res.json();
-            if (!data.snapshots) return;
-
-            const stateMap = {
-                'check-inventory': 'f-check',
-                'process-payment': 'f-pay',
-                'ship-order': 'f-ship',
-                'send-notification': 'f-notify',
-                'order-failed': 'f-pay',
-                'notify-shortage': 'f-check'
-            };
-
-            // Show snapshots
-            const snapEl = document.getElementById('snapshots');
-            snapEl.innerHTML = data.snapshots.map(s => `
+            if (!data.snapshots) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
+            el.innerHTML = data.snapshots.map(s => `
                 <div class="snapshot">
                     <span class="state">${s.stateName}</span>
                     <span class="badge badge-${s.status.toLowerCase()}">${s.status}</span>
-                    <span class="time">attempt #${s.attempt}</span>
+                    <span class="time">尝试 #${s.attempt}</span>
                     ${s.errorMessage ? `<span style="color:#dc2626">${s.errorMessage}</span>` : ''}
                 </div>
             `).join('');
-
-            // Animate steps
-            for (const s of data.snapshots) {
-                const elId = stateMap[s.stateName];
-                if (!elId) continue;
-                const el = document.getElementById(elId);
-                if (el) {
-                    el.className = 'flow-step ' + (s.status === 'SUCCESS' ? 'success' : 'fail');
-                }
-            }
-        } catch (e) {}
+        } catch (e) { el.innerHTML = '<div class="loading">加载失败</div>'; }
     }
 
     async function loadOrders() {
@@ -233,34 +274,139 @@
         try {
             const res = await fetch('/demo/orders?limit=20');
             const orders = await res.json();
-            if (orders.length === 0) {
-                el.innerHTML = '<div class="loading">暂无订单</div>';
-                return;
-            }
+            if (orders.length === 0) { el.innerHTML = '<div class="loading">暂无订单</div>'; return; }
             el.innerHTML = orders.map(o => `
-                <div class="order-item" onclick="showDetail('${o.id}')" style="cursor:pointer">
+                <div class="order-item" onclick="showSnapshots('${o.id}','order')">
                     <div class="order-info">
                         <div class="order-id">${o.id}</div>
-                        <div style="font-size:12px;color:#9ca3af">${o.currentState} | 重试: ${o.retryCount}</div>
+                        <div style="font-size:12px;color:#9ca3af">${o.currentState} | 重试: ${o.retryCount} | businessId: ${o.businessId || '-'}</div>
                     </div>
                     <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+                    <div class="action-btns">
+                        ${o.status === 'SUSPENDED' ? `<button class="btn btn-sm btn-resume" onclick="event.stopPropagation();openResumeModal('${o.id}','order','${o.currentState}')">恢复</button>` : ''}
+                        ${o.status === 'FAILED' ? `<button class="btn btn-sm btn-retry" onclick="event.stopPropagation();retryOrder('${o.id}')">重试</button>` : ''}
+                    </div>
                 </div>
             `).join('');
+        } catch (e) { el.innerHTML = '<div class="loading">加载失败</div>'; }
+    }
+
+    async function retryOrder(id) {
+        try {
+            await fetch(`/demo/orders/${id}/retry`, { method: 'POST' });
+            loadOrders();
+        } catch (e) { alert('重试失败: ' + e.message); }
+    }
+
+    // ===== Outbound Process =====
+    async function createOutbound() {
+        const btn = document.getElementById('obSubmitBtn');
+        const result = document.getElementById('obResult');
+        btn.disabled = true; btn.textContent = '执行中...';
+        result.className = 'result';
+
+        const body = {
+            warehouseCode: document.getElementById('warehouseCode').value,
+            totalQty: parseInt(document.getElementById('totalQty').value),
+            carrierCode: document.getElementById('carrierCode').value
+        };
+
+        try {
+            const res = await fetch('/demo/outbound', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            result.className = 'result show ' + (data.success ? (data.status === 'SUSPENDED' ? 'suspended' : 'success') : 'fail');
+            result.innerHTML = `
+                <strong>${data.success ? '&#x2705; 成功' : '&#x274C; 失败'}</strong><br>
+                出库单号: <code>${data.outboundNo}</code><br>
+                实例ID: <code>${data.instanceId}</code><br>
+                状态: ${data.status}<br>
+                ${data.message || ''}
+            `;
+            showSnapshots(data.instanceId, 'outbound');
+            loadOutbounds();
         } catch (e) {
-            el.innerHTML = '<div class="loading">加载失败</div>';
+            result.className = 'result show fail';
+            result.innerHTML = `<strong>&#x274C; 请求失败</strong><br>${e.message}`;
+        } finally {
+            btn.disabled = false; btn.innerHTML = '&#x1F4E6; 触发出库';
         }
     }
 
-    async function showDetail(id) {
+    async function loadOutbounds() {
+        const el = document.getElementById('outbounds');
         try {
-            const res = await fetch(`/demo/orders/${id}`);
+            const res = await fetch('/demo/outbounds?limit=20');
+            const list = await res.json();
+            if (list.length === 0) { el.innerHTML = '<div class="loading">暂无出库单</div>'; return; }
+            el.innerHTML = list.map(o => `
+                <div class="order-item" onclick="showSnapshots('${o.id}','outbound')">
+                    <div class="order-info">
+                        <div class="order-id">${o.id}</div>
+                        <div style="font-size:12px;color:#9ca3af">${o.currentState} | 重试: ${o.retryCount} | businessId: ${o.businessId || '-'}</div>
+                    </div>
+                    <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+                    <div class="action-btns">
+                        ${o.status === 'SUSPENDED' ? `<button class="btn btn-sm btn-resume" onclick="event.stopPropagation();openResumeModal('${o.id}','outbound','${o.currentState}')">恢复</button>` : ''}
+                        ${o.status === 'FAILED' ? `<button class="btn btn-sm btn-retry" onclick="event.stopPropagation();retryOutbound('${o.id}')">重试</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) { el.innerHTML = '<div class="loading">加载失败</div>'; }
+    }
+
+    async function retryOutbound(id) {
+        try {
+            await fetch(`/demo/outbounds/${id}/retry`, { method: 'POST' });
+            loadOutbounds();
+        } catch (e) { alert('重试失败: ' + e.message); }
+    }
+
+    // ===== Resume Modal =====
+    let currentResume = {};
+
+    function openResumeModal(instanceId, type, currentState) {
+        currentResume = { instanceId, type, currentState };
+        document.getElementById('resumeInstanceId').textContent = instanceId;
+        document.getElementById('resumeCurrentState').textContent = currentState;
+        document.getElementById('resumeModal').classList.add('show');
+    }
+
+    function closeResumeModal() {
+        document.getElementById('resumeModal').classList.remove('show');
+        currentResume = {};
+    }
+
+    async function confirmResume() {
+        const { instanceId, type, currentState } = currentResume;
+        const url = type === 'outbound' ? '/demo/outbound/resume/' + instanceId : '/demo/order/resume/' + instanceId;
+        const btn = document.getElementById('resumeConfirmBtn');
+        btn.disabled = true; btn.textContent = '恢复中...';
+        try {
+            const res = await fetch(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ expectedCurrentState: currentState })
+            });
             const data = await res.json();
-            animateFlow(id);
-        } catch (e) {}
+            if (data.success) {
+                closeResumeModal();
+                if (type === 'outbound') loadOutbounds(); else loadOrders();
+                showSnapshots(instanceId, type);
+            } else {
+                alert('恢复失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('恢复请求失败: ' + e.message);
+        } finally {
+            btn.disabled = false; btn.textContent = '恢复执行';
+        }
     }
 
     // Initial load
     loadOrders();
+    loadOutbounds();
 </script>
 </body>
 </html>

@@ -328,6 +328,16 @@ public class DemoController {
         );
     }
 
+    /**
+     * 重试失败出库单
+     */
+    @PostMapping("/outbounds/{id}/retry")
+    public Map<String, String> retryOutbound(@PathVariable String id) {
+        outboundMachine.retry(id);
+        var updated = instanceRepository.findById(id).orElse(null);
+        return Map.of("message", "已重新执行，当前状态: " + (updated != null ? updated.status() : "unknown"));
+    }
+
     private String stackTrace(Throwable e) {
         StringWriter sw = new StringWriter();
         e.printStackTrace(new PrintWriter(sw));
