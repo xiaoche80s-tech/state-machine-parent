@@ -8,11 +8,13 @@ const API = {
     },
     async getInstanceDetail(id) { return (await fetch(`/statemachine/api/instances/${id}`)).json(); },
     async retryInstance(id) { return (await fetch(`/statemachine/api/instances/${id}/retry`, { method: 'POST' })).json(); },
-    async resumeInstance(id, expectedCurrentState) {
+    async resumeInstance(id, expectedCurrentState, contextJson) {
+        const body = { expectedCurrentState };
+        if (contextJson) body.contextJson = contextJson;
         return (await fetch(`/statemachine/api/instances/${id}/resume`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ expectedCurrentState })
+            body: JSON.stringify(body)
         })).json();
     }
 };

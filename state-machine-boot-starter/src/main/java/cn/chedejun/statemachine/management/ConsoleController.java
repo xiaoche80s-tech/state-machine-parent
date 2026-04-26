@@ -100,10 +100,27 @@ public class ConsoleController {
         var machine = registry.getLatest(inst.get().machineName());
         if (machine.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName());
         try {
-            machine.get().resumeByInstanceId(id, expectedState, ctx -> {});
+            String contextJson = params.get("contextJson");
+            @SuppressWarnings("unchecked")
+            cn.chedejun.statemachine.core.StateMachine<Object> m =
+                (cn.chedejun.statemachine.core.StateMachine<Object>)
+                        machine.get();
+
+            if (contextJson != null && !contextJson.isBlank()) {
+                final String cj = contextJson;
+                m.resumeByInstanceId(id, expectedState, ctx -> {
+                    try {
+                        objectMapper.readerForUpdating(ctx).readValue(cj);
+                    } catch (Exception e) {
+                        throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
+                    }
+                });
+            } else {
+                m.resumeByInstanceId(id, expectedState, c -> {});
+            }
             var updated = instanceRepository.findById(id);
             return Map.of("success", true, "message", "已恢复执行", "currentState",
-                updated.map(r -> r.currentState()).orElse("unknown"));
+                updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
         } catch (Exception e) {
             return Map.of("success", false, "error", e.getMessage());
         }

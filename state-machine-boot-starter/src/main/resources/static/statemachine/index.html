@@ -231,6 +231,10 @@
                             </div>
                             <div class="instance-right">
                                 <span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span>
+                                <button v-if="i.status==='SUSPENDED'" @click.stop="openResumeModal(i.id, i.currentState)" class="btn btn-sm btn-resume" style="margin-left:6px">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                    恢复
+                                </button>
                                 <span class="instance-time">{{ relativeTime(i.createdAt) }}</span>
                             </div>
                         </div>
@@ -246,7 +250,6 @@
                         <button class="page-btn" :disabled="machinePage >= machineTotalPages - 1" @click="machinePage = machineTotalPages - 1; loadMachineInstances()">末页</button>
                     </div>
                 </div>
-            </div>
 
             <!-- Instances View -->
             <div v-if="currentView==='instances'" class="view-instances">
@@ -290,7 +293,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
             <!-- Instance Detail View -->
             <div v-if="currentView==='instance'" class="view-instance">
@@ -303,6 +305,10 @@
                                 <button v-if="instanceDetail.instance.status==='FAILED'" @click="retryInstance(instanceDetail.instance.id)" class="btn btn-retry">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                     重试
+                                </button>
+                                <button v-if="instanceDetail.instance.status==='SUSPENDED'" @click="openResumeModal(instanceDetail.instance.id, instanceDetail.instance.currentState)" class="btn btn-resume">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                    恢复
                                 </button>
                             </div>
                             <div class="inst-grid">
@@ -382,7 +388,6 @@
                     </div>
                 </div>
             </div>
-        </div>
     </main>
     <!-- Drawer -->
     <div class="drawer-overlay" :class="{open: drawerVisible}" @click="closeDrawer"></div>
@@ -400,6 +405,10 @@
                         <button v-if="drawerInstance.status==='FAILED'" @click="retryInstance(drawerInstance.id); openDrawer(drawerInstance.id)" class="btn btn-retry">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                             重试
+                        </button>
+                        <button v-if="drawerInstance.status==='SUSPENDED'" @click="openResumeModal(drawerInstance.id, drawerInstance.currentState)" class="btn btn-resume">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            恢复
                         </button>
                     </div>
                     <div class="inst-grid">
@@ -477,14 +486,13 @@
                 </div>
             </div>
         </div>
-    </div>
 
     <!-- Toast -->
     <div class="toast" :class="{ show: toastVisible }">{{ toastMsg }}</div>
 
     <!-- Resume Modal -->
     <div class="modal-overlay" :class="{open: resumeModalVisible}" @click="closeResumeModal">
-        <div class="modal" @click.stop>
+        <div class="modal modal-resume" @click.stop>
             <div class="modal-header">
                 <h2>恢复挂起实例</h2>
                 <button class="modal-close" @click="closeResumeModal">
@@ -502,7 +510,26 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">预期状态</label>
-                    <input class="form-input" v-model="resumeForm.expectedState" placeholder="请输入预期状态，用于幂等校验" />
+                    <input class="form-input" v-model="resumeForm.expectedState" readonly style="opacity:0.7;cursor:default" />
+                </div>
+                <div class="form-group">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                        <label class="form-label" style="margin-bottom:0">IN 参数（Context）</label>
+                        <div style="display:flex;gap:4px">
+                            <button class="btn btn-sm" :class="resumeContextMode==='tree'?'btn-primary':'btn-cancel'" @click="resumeContextMode='tree'" style="padding:3px 10px;font-size:0.7rem">树形</button>
+                            <button class="btn btn-sm" :class="resumeContextMode==='text'?'btn-primary':'btn-cancel'" @click="syncTreeToText(); resumeContextMode='text'" style="padding:3px 10px;font-size:0.7rem">文本</button>
+                        </div>
+                    </div>
+                    <!-- Text mode -->
+                    <textarea v-if="resumeContextMode==='text'" v-model="resumeForm.contextJson" class="form-input form-textarea" style="min-height:200px;font-family:var(--mono);font-size:0.8rem;resize:vertical"></textarea>
+                    <!-- Tree mode -->
+                    <div v-else class="context-tree">
+                        <template v-for="(node, idx) in resumeContextTree" :key="idx">
+                            <tree-node :node="node" :depth="0" @update:modelValue="onTreeNodeUpdate(idx, $event)"></tree-node>
+                        </template>
+                        <div v-if="!resumeContextTree.length" style="color:var(--gray-400);font-size:0.8rem;padding:12px;text-align:center">无参数</div>
+                    </div>
+                    <div v-if="resumeContextError" style="color:var(--red);font-size:0.75rem;margin-top:4px">{{ resumeContextError }}</div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -514,6 +541,7 @@
             </div>
         </div>
     </div>
+</div>
 
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>

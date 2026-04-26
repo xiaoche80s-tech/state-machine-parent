@@ -1,6 +1,34 @@
 const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
+// TreeNode component for editable JSON tree
+const TreeNode = {
+    name: 'TreeNode',
+    props: { node: Object, depth: Number },
+    emits: ['update:modelValue'],
+    template: `
+        <div>
+            <div class="tree-node" :class="{ 'tree-node--nested': depth > 0 }">
+                <button v-if="node.children" class="tree-toggle" :class="{ expanded: expanded }" @click="expanded = !expanded">▶</button>
+                <span v-else style="width:12px;display:inline-block"></span>
+                <span class="tree-key">{{ node.key }}</span>
+                <span class="tree-type">{{ node.type }}</span>
+                <template v-if="node.children">
+                    <span class="tree-type">({{ node.children.length }})</span>
+                </template>
+                <input v-else class="tree-input" v-model="node.value" :type="node.type === 'number' ? 'number' : 'text'" />
+            </div>
+            <template v-if="node.children && expanded">
+                <tree-node v-for="(child, i) in node.children" :key="i" :node="child" :depth="depth + 1" />
+            </template>
+        </div>
+    `,
+    data() {
+        return { expanded: true };
+    }
+};
+
 createApp({
+    components: { TreeNode },
     setup() {
         const currentView = ref('list');
         const machines = ref([]);
@@ -48,28 +76,126 @@ createApp({
 
         // Resume modal
         const resumeModalVisible = ref(false);
-        const resumeForm = ref({ instanceId: '', currentState: '', expectedState: '' });
+        const resumeForm = ref({ instanceId: '', currentState: '', expectedState: '', contextJson: '' });
         const resumeLoading = ref(false);
+        const resumeContextMode = ref('tree'); // 'text' or 'tree'
+        const resumeContextTree = ref([]);
+        const resumeContextError = ref('');
 
-        function openResumeModal(instanceId, currentState) {
-            resumeForm.value = { instanceId, currentState, expectedState: currentState };
+        function parseJsonTree(obj, path = '') {
+            if (obj === null || obj === undefined) return [{ key: path || '(root)', type: 'null', value: 'null', editable: false }];
+            const nodes = [];
+            if (Array.isArray(obj)) {
+                for (let i = 0; i < obj.length; i++) {
+                    const childPath = path ? `${path}[${i}]` : `[${i}]`;
+                    if (typeof obj[i] === 'object' && obj[i] !== null) {
+                        nodes.push({ key: `[${i}]`, type: Array.isArray(obj[i]) ? 'array' : 'object', children: parseJsonTree(obj[i], childPath), editable: true });
+                    } else {
+                        nodes.push({ key: `[${i}]`, type: typeof obj[i], value: obj[i], path: childPath, editable: true });
+                    }
+                }
+            } else if (typeof obj === 'object') {
+                for (const k of Object.keys(obj)) {
+                    const childPath = path ? `${path}.${k}` : k;
+                    if (typeof obj[k] === 'object' && obj[k] !== null) {
+                        nodes.push({ key: k, type: Array.isArray(obj[k]) ? 'array' : 'object', children: parseJsonTree(obj[k], childPath), editable: true });
+                    } else {
+                        nodes.push({ key: k, type: typeof obj[k], value: obj[k], path: childPath, editable: true });
+                    }
+                }
+            } else {
+                nodes.push({ key: path || '(root)', type: typeof obj, value: obj, editable: true });
+            }
+            return nodes;
+        }
+
+        function jsonTreeToObj(nodes) {
+            const result = {};
+            for (const node of nodes) {
+                if (node.children) {
+                    result[node.key] = jsonTreeToObj(node.children);
+                } else {
+                    let val = node.value;
+                    if (node.type === 'number') val = Number(val);
+                    else if (node.type === 'boolean') val = val === 'true' || val === true;
+                    else if (node.type === 'null') val = null;
+                    result[node.key] = val;
+                }
+            }
+            // If all keys are numeric indices, return array
+            const allNumeric = Object.keys(result).every(k => /^\d+$/.test(k));
+            return allNumeric ? Object.values(result) : result;
+        }
+
+        function getTreeJson() {
+            return JSON.stringify(jsonTreeToObj(resumeContextTree.value));
+        }
+
+        function onTreeNodeUpdate(idx, value) {
+            resumeContextTree.value[idx].value = value;
+        }
+
+        function syncTreeToText() {
+            try {
+                resumeForm.value.contextJson = getTreeJson();
+            } catch (e) { /* ignore */ }
+        }
+
+        async function openResumeModal(instanceId, currentState) {
+            resumeForm.value = { instanceId, currentState, expectedState: currentState, contextJson: '' };
+            resumeContextMode.value = 'tree';
+            resumeContextError.value = '';
             resumeModalVisible.value = true;
+            // Fetch instance detail to get last snapshot outputJson
+            try {
+                const detail = await API.getInstanceDetail(instanceId);
+                if (detail.snapshots && detail.snapshots.length > 0) {
+                    const lastSnap = detail.snapshots[detail.snapshots.length - 1];
+                    const jsonStr = lastSnap.output || lastSnap.input || '{}';
+                    resumeForm.value.contextJson = JSON.stringify(JSON.parse(jsonStr), null, 2);
+                    resumeContextTree.value = parseJsonTree(JSON.parse(jsonStr));
+                } else {
+                    resumeForm.value.contextJson = '{}';
+                    resumeContextTree.value = [];
+                }
+            } catch (e) {
+                resumeForm.value.contextJson = '{}';
+                resumeContextTree.value = [];
+            }
         }
 
         function closeResumeModal() {
             resumeModalVisible.value = false;
-            resumeForm.value = { instanceId: '', currentState: '', expectedState: '' };
+            resumeForm.value = { instanceId: '', currentState: '', expectedState: '', contextJson: '' };
+            resumeContextTree.value = [];
+            resumeContextError.value = '';
         }
 
         async function confirmResume() {
             if (!resumeForm.value.expectedState) return;
+            let contextJson = null;
+            if (resumeContextMode.value === 'text') {
+                try {
+                    contextJson = JSON.stringify(JSON.parse(resumeForm.value.contextJson));
+                } catch (e) {
+                    resumeContextError.value = 'JSON 格式错误: ' + e.message;
+                    return;
+                }
+            } else {
+                try {
+                    contextJson = getTreeJson();
+                } catch (e) {
+                    resumeContextError.value = '树形数据格式错误: ' + e.message;
+                    return;
+                }
+            }
+            resumeContextError.value = '';
             resumeLoading.value = true;
             try {
-                const result = await API.resumeInstance(resumeForm.value.instanceId, resumeForm.value.expectedState);
+                const result = await API.resumeInstance(resumeForm.value.instanceId, resumeForm.value.expectedState, contextJson);
                 if (result.success) {
                     showToast('已恢复执行');
                     closeResumeModal();
-                    // Refresh current view
                     if (currentView.value === 'instance') {
                         const detail = await API.getInstanceDetail(resumeForm.value.instanceId);
                         if (detail.instance) {
@@ -81,7 +207,6 @@ createApp({
                     } else if (currentView.value === 'machine') {
                         await loadMachineInstances();
                     }
-                    // Refresh drawer if open
                     if (drawerVisible.value && drawerInstance.value && drawerInstance.value.id) {
                         const data = await API.getInstanceDetail(drawerInstance.value.id);
                         if (data.instance) {
@@ -429,7 +554,8 @@ createApp({
             copyText,
             drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer,
             toastMsg, toastVisible, showToast,
-            resumeModalVisible, resumeForm, resumeLoading, openResumeModal, closeResumeModal, confirmResume
+            resumeModalVisible, resumeForm, resumeLoading, resumeContextMode, resumeContextTree, resumeContextError,
+            openResumeModal, closeResumeModal, confirmResume, getTreeJson, syncTreeToText, onTreeNodeUpdate
         };
     }
 }).mount('#app');
