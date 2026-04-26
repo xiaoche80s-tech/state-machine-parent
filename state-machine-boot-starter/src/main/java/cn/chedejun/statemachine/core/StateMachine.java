@@ -1,6 +1,7 @@
 package cn.chedejun.statemachine.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import cn.chedejun.statemachine.persistence.DefinitionRepository;
 import cn.chedejun.statemachine.persistence.InstanceRepository;
 import cn.chedejun.statemachine.persistence.SnapshotRepository;
@@ -229,7 +230,7 @@ public class StateMachine<C> {
     public void setRegistry(StateMachineRegistry registry) { this.registry = registry; }
     public void setJdbcTemplate(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = new ObjectMapper().setSerializationInclusion(JsonInclude.Include.ALWAYS);
         this.instanceRepository = new InstanceRepository(jdbcTemplate);
         this.snapshotRepository = new SnapshotRepository(jdbcTemplate);
     }
