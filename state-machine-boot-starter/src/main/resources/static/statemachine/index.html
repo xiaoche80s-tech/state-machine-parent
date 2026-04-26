@@ -230,10 +230,6 @@
                                 </div>
                             </div>
                             <div class="instance-right">
-                                <button v-if="i.status==='SUSPENDED'" @click.stop="openResumeModal(i.id, i.currentState)" class="btn btn-resume-sm">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    恢复
-                                </button>
                                 <span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span>
                                 <span class="instance-time">{{ relativeTime(i.createdAt) }}</span>
                             </div>
