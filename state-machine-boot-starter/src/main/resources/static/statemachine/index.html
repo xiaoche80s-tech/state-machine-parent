@@ -393,14 +393,14 @@
                                                 <span class="io-label io-label--in">IN</span>
                                                 <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
                                             </div>
-                                            <pre class="io-code-full">{{ formatJson(s.input) }}</pre>
+                                            <pre class="io-code-full">{{ s.input }}</pre>
                                         </div>
                                         <div class="io-block" v-if="s.output">
                                             <div class="io-header">
                                                 <span class="io-label io-label--out">OUT</span>
                                                 <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
                                             </div>
-                                            <pre class="io-code-full">{{ formatJson(s.output) }}</pre>
+                                            <pre class="io-code-full">{{ s.output }}</pre>
                                         </div>
                                     </div>
                                     <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
@@ -491,14 +491,14 @@
                                             <span class="io-label io-label--in">IN</span>
                                             <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
                                         </div>
-                                        <pre class="io-code-full">{{ formatJson(s.input) }}</pre>
+                                        <pre class="io-code-full">{{ s.input }}</pre>
                                     </div>
                                     <div class="io-block" v-if="s.output">
                                         <div class="io-header">
                                             <span class="io-label io-label--out">OUT</span>
                                             <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
                                         </div>
-                                        <pre class="io-code-full">{{ formatJson(s.output) }}</pre>
+                                        <pre class="io-code-full">{{ s.output }}</pre>
                                     </div>
                                 </div>
                                 <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
