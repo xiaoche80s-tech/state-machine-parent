@@ -304,10 +304,6 @@
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                     重试
                                 </button>
-                                <button v-if="instanceDetail.instance.status==='SUSPENDED'" @click="openResumeModal(instanceDetail.instance.id, instanceDetail.instance.currentState)" class="btn btn-resume">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    恢复
-                                </button>
                             </div>
                             <div class="inst-grid">
                                 <div class="inst-field">
@@ -404,10 +400,6 @@
                         <button v-if="drawerInstance.status==='FAILED'" @click="retryInstance(drawerInstance.id); openDrawer(drawerInstance.id)" class="btn btn-retry">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                             重试
-                        </button>
-                        <button v-if="drawerInstance.status==='SUSPENDED'" @click="openResumeModal(drawerInstance.id, drawerInstance.currentState)" class="btn btn-resume">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                            恢复
                         </button>
                     </div>
                     <div class="inst-grid">
