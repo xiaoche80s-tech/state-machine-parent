@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://10.0.66.132:15432/java-project-demo
+    url: jdbc:postgresql://inas.club:15432/java-project-demo
     username: chedejun
     password: 123456
     driver-class-name: org.postgresql.Driver

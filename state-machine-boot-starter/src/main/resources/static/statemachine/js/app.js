@@ -37,9 +37,19 @@ createApp({
         function formatJson(s) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } }
         function toggle(k) { expanded.value[k] = !expanded.value[k]; }
 
+        const toastMsg = ref('');
+        const toastVisible = ref(false);
+
+        function showToast(msg) {
+            toastMsg.value = msg;
+            toastVisible.value = true;
+            setTimeout(() => { toastVisible.value = false; }, 1500);
+        }
+
         async function copyText(text) {
             try {
                 await navigator.clipboard.writeText(text);
+                showToast('已复制');
             } catch (e) {
                 const ta = document.createElement('textarea');
                 ta.value = text;
@@ -47,6 +57,7 @@ createApp({
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
+                showToast('已复制');
             }
         }
 
@@ -360,7 +371,8 @@ createApp({
             getStateType, getTransitionsFrom,
             loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, loadMachineInstances,
             copyText,
-            drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer
+            drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer,
+            toastMsg, toastVisible, showToast
         };
     }
 }).mount('#app');

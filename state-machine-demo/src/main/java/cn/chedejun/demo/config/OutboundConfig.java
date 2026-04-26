@@ -26,6 +26,7 @@ public class OutboundConfig {
             .state("pick", this::pickGoods)
             .state("check", this::checkGoods)
             .state("pack", this::packGoods)
+            .suspendState("wait-ship-confirm", this::waitShipConfirm)
             .state("ship", this::shipGoods)
             .state("complete", this::completeOutbound)
             .state("handle-exception", this::handleException)
@@ -40,7 +41,9 @@ public class OutboundConfig {
             .transition("check", "pack", ctx -> ctx.isPacked())
             // 复核不通过 -> 重新拣货
             .transition("check", "re-pick", ctx -> !ctx.isPacked())
-            .transition("pack", "ship", ctx -> true)
+            .transition("pack", "wait-ship-confirm", ctx -> true)
+            // 挂起点：等待发货确认 -> 发货
+            .transition("wait-ship-confirm", "ship", ctx -> true)
             .transition("ship", "complete", ctx -> ctx.isShipped())
             // 发货失败 -> 退货入库
             .transition("ship", "return-inbound", ctx -> !ctx.isShipped())
@@ -80,6 +83,10 @@ public class OutboundConfig {
         } else {
             ctx.setPacked(true);
         }
+    }
+
+    private void waitShipConfirm(OutboundContext ctx) {
+        log("等待发货确认: outboundNo=%s, 状态=挂起，等待恢复执行", ctx.getOutboundNo());
     }
 
     private void packGoods(OutboundContext ctx) {

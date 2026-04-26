@@ -848,3 +848,25 @@ button { font-family: var(--sans); }
     font-weight: 500;
     padding: 0 8px;
 }
+
+/* ===== Toast ===== */
+.toast {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: var(--gray-900);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: var(--radius);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 200;
+}
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
