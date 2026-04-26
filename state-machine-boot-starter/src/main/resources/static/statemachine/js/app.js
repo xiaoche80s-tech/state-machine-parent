@@ -71,21 +71,26 @@ createApp({
                     closeResumeModal();
                     // Refresh current view
                     if (currentView.value === 'instance') {
-                        instanceDetail.value = await API.getInstanceDetail(resumeForm.value.instanceId);
-                        await nextTick();
-                        const el = await waitForElement('#instance-mermaid');
-                        if (el) renderInstanceMermaid();
+                        const detail = await API.getInstanceDetail(resumeForm.value.instanceId);
+                        if (detail.instance) {
+                            instanceDetail.value = detail;
+                            await nextTick();
+                            const el = await waitForElement('#instance-mermaid');
+                            if (el) renderInstanceMermaid();
+                        }
                     } else if (currentView.value === 'machine') {
                         await loadMachineInstances();
                     }
                     // Refresh drawer if open
-                    if (drawerVisible.value && drawerInstance.value) {
+                    if (drawerVisible.value && drawerInstance.value && drawerInstance.value.id) {
                         const data = await API.getInstanceDetail(drawerInstance.value.id);
-                        drawerInstance.value = data.instance;
-                        drawerSnapshots.value = data.snapshots;
-                        await nextTick();
-                        const el = await waitForElement('#drawer-graph');
-                        if (el) renderDrawerMermaid();
+                        if (data.instance) {
+                            drawerInstance.value = data.instance;
+                            drawerSnapshots.value = data.snapshots;
+                            await nextTick();
+                            const el = await waitForElement('#drawer-graph');
+                            if (el) renderDrawerMermaid();
+                        }
                     }
                 } else {
                     showToast('恢复失败: ' + (result.error || '未知错误'));
@@ -236,8 +241,9 @@ createApp({
             if (!el || !drawerInstance.value) return;
 
             const inst = drawerInstance.value;
+            if (!inst.machineName) return;
             const vers = await API.getVersions(inst.machineName);
-            if (!vers.length) return;
+            if (!vers.length || !vers[0].transitions) return;
 
             const stateStatus = {};
             drawerSnapshots.value.forEach(s => {
@@ -332,8 +338,9 @@ createApp({
             if (!el || !instanceDetail.value.instance) return;
 
             const inst = instanceDetail.value.instance;
+            if (!inst.machineName) return;
             const vers = await API.getVersions(inst.machineName);
-            if (!vers.length) return;
+            if (!vers.length || !vers[0].transitions) return;
 
             // Collect snapshot statuses per state
             const stateStatus = {};
