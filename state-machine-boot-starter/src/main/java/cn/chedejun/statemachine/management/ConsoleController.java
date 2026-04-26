@@ -88,6 +88,27 @@ public class ConsoleController {
         return Map.of("instance", dto, "snapshots", snaps);
     }
 
+    @PostMapping("/api/instances/{id}/resume") @ResponseBody
+    public Map<String, Object> resumeInstance(@PathVariable String id,
+            @RequestBody Map<String, String> params) {
+        var inst = instanceRepository.findById(id);
+        if (inst.isEmpty()) return Map.of("success", false, "error", "Instance not found");
+        String expectedState = params.get("expectedCurrentState");
+        if (expectedState == null || expectedState.isBlank()) {
+            return Map.of("success", false, "error", "Missing expectedCurrentState");
+        }
+        var machine = registry.getLatest(inst.get().machineName());
+        if (machine.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName());
+        try {
+            machine.get().resumeByInstanceId(id, expectedState, ctx -> {});
+            var updated = instanceRepository.findById(id);
+            return Map.of("success", true, "message", "已恢复执行", "currentState",
+                updated.map(r -> r.currentState()).orElse("unknown"));
+        } catch (Exception e) {
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
     @PostMapping("/api/instances/{id}/retry") @ResponseBody
     public Map<String, String> retryInstance(@PathVariable String id) {
         var inst = instanceRepository.findById(id);

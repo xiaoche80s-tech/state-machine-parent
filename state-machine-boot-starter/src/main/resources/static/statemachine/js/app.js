@@ -30,7 +30,7 @@ createApp({
         function shortId(id) { return id ? id.substring(0, 8) + '\u2026' : ''; }
         function statusClass(s) { return s ? 'status-' + s : ''; }
         function statusLabel(s) {
-            const map = { RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', SUCCESS: '成功' };
+            const map = { RUNNING: '运行中', COMPLETED: '已完成', FAILED: '失败', SUCCESS: '成功', SUSPENDED: '已挂起' };
             return map[s] || s;
         }
         function shortJson(s) { return s.length > 60 ? s.substring(0, 60) + '\u2026' : s; }
@@ -44,6 +44,55 @@ createApp({
             toastMsg.value = msg;
             toastVisible.value = true;
             setTimeout(() => { toastVisible.value = false; }, 1500);
+        }
+
+        // Resume modal
+        const resumeModalVisible = ref(false);
+        const resumeForm = ref({ instanceId: '', currentState: '', expectedState: '' });
+        const resumeLoading = ref(false);
+
+        function openResumeModal(instanceId, currentState) {
+            resumeForm.value = { instanceId, currentState, expectedState: currentState };
+            resumeModalVisible.value = true;
+        }
+
+        function closeResumeModal() {
+            resumeModalVisible.value = false;
+            resumeForm.value = { instanceId: '', currentState: '', expectedState: '' };
+        }
+
+        async function confirmResume() {
+            if (!resumeForm.value.expectedState) return;
+            resumeLoading.value = true;
+            try {
+                const result = await API.resumeInstance(resumeForm.value.instanceId, resumeForm.value.expectedState);
+                if (result.success) {
+                    showToast('已恢复执行');
+                    closeResumeModal();
+                    // Refresh current view
+                    if (currentView.value === 'instance') {
+                        instanceDetail.value = await API.getInstanceDetail(resumeForm.value.instanceId);
+                        await nextTick();
+                        const el = await waitForElement('#instance-mermaid');
+                        if (el) renderInstanceMermaid();
+                    } else if (currentView.value === 'machine') {
+                        await loadMachineInstances();
+                    }
+                    // Refresh drawer if open
+                    if (drawerVisible.value && drawerInstance.value) {
+                        const data = await API.getInstanceDetail(drawerInstance.value.id);
+                        drawerInstance.value = data.instance;
+                        drawerSnapshots.value = data.snapshots;
+                        await nextTick();
+                        const el = await waitForElement('#drawer-graph');
+                        if (el) renderDrawerMermaid();
+                    }
+                } else {
+                    showToast('恢复失败: ' + (result.error || '未知错误'));
+                }
+            } finally {
+                resumeLoading.value = false;
+            }
         }
 
         async function copyText(text) {
@@ -372,7 +421,8 @@ createApp({
             loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, loadMachineInstances,
             copyText,
             drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer,
-            toastMsg, toastVisible, showToast
+            toastMsg, toastVisible, showToast,
+            resumeModalVisible, resumeForm, resumeLoading, openResumeModal, closeResumeModal, confirmResume
         };
     }
 }).mount('#app');
