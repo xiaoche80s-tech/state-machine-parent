@@ -391,16 +391,22 @@
                                         <div class="io-block" v-if="s.input">
                                             <div class="io-header">
                                                 <span class="io-label io-label--in">IN</span>
-                                                <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                                <div class="io-actions">
+                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
+                                                    <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                                </div>
                                             </div>
-                                            <pre class="io-code-full">{{ s.input }}</pre>
+                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                         </div>
                                         <div class="io-block" v-if="s.output">
                                             <div class="io-header">
                                                 <span class="io-label io-label--out">OUT</span>
-                                                <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                                <div class="io-actions">
+                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
+                                                    <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                                </div>
                                             </div>
-                                            <pre class="io-code-full">{{ s.output }}</pre>
+                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
                                         </div>
                                     </div>
                                     <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
@@ -489,16 +495,22 @@
                                     <div class="io-block" v-if="s.input">
                                         <div class="io-header">
                                             <span class="io-label io-label--in">IN</span>
-                                            <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                            <div class="io-actions">
+                                                <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
+                                                <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                            </div>
                                         </div>
-                                        <pre class="io-code-full">{{ s.input }}</pre>
+                                        <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                     </div>
                                     <div class="io-block" v-if="s.output">
                                         <div class="io-header">
                                             <span class="io-label io-label--out">OUT</span>
-                                            <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                            <div class="io-actions">
+                                                <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
+                                                <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                            </div>
                                         </div>
-                                        <pre class="io-code-full">{{ s.output }}</pre>
+                                        <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
                                     </div>
                                 </div>
                                 <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>

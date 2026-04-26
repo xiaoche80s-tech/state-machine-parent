@@ -643,6 +643,12 @@ a:hover { color: var(--primary-light); }
     align-items: center;
     justify-content: space-between;
 }
+.io-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
 .io-label {
     font-size: 0.65rem;
     font-weight: 700;
@@ -669,6 +675,27 @@ a:hover { color: var(--primary-light); }
     border-color: var(--primary);
     color: var(--primary);
 }
+.io-preview-btn {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--gray-200);
+    background: var(--surface);
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: var(--sans);
+}
+.io-preview-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.io-preview-btn.active {
+    border-color: var(--primary);
+    background: var(--primary-bg);
+    color: var(--primary);
+}
 .io-code-full {
     font-family: var(--mono);
     font-size: 0.78rem;
@@ -681,6 +708,11 @@ a:hover { color: var(--primary-light); }
     word-break: break-word;
     margin: 0;
     border: 1px solid var(--gray-100);
+    overflow-x: auto;
+}
+.io-raw {
+    white-space: nowrap;
+    overflow-x: auto;
 }
 
 .timeline-error {

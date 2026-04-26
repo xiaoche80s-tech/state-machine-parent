@@ -48,6 +48,7 @@ createApp({
         const drawerVisible = ref(false);
         const drawerInstance = ref(null);
         const drawerSnapshots = ref([]);
+        const drawerIoExpanded = ref(new Set());
 
         // Stats
         const totalMachines = computed(() => machines.value.length);
@@ -350,16 +351,27 @@ createApp({
             drawerVisible.value = false;
             drawerInstance.value = null;
             drawerSnapshots.value = [];
+            drawerIoExpanded.value = new Set();
         }
 
         async function openDrawer(instanceId) {
             drawerVisible.value = true;
+            drawerIoExpanded.value = new Set();
             const data = await API.getInstanceDetail(instanceId);
             drawerInstance.value = data.instance;
             drawerSnapshots.value = data.snapshots;
             await nextTick();
             const el = await waitForElement('#drawer-graph');
             if (el) renderDrawerMermaid();
+        }
+
+        function toggleDrawerIo(snapshotId, dir) {
+            const key = snapshotId + ':' + dir;
+            if (drawerIoExpanded.value.has(key)) drawerIoExpanded.value.delete(key);
+            else drawerIoExpanded.value.add(key);
+        }
+        function isDrawerIoExpanded(snapshotId, dir) {
+            return drawerIoExpanded.value.has(snapshotId + ':' + dir);
         }
 
         async function renderDrawerMermaid() {
@@ -687,7 +699,7 @@ createApp({
             getStateType, getTransitionsFrom,
             loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, loadMachineInstances,
             copyText,
-            drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer,
+            drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer, toggleDrawerIo, isDrawerIoExpanded,
             toastMsg, toastVisible, showToast,
             resumeModalVisible, resumeForm, resumeLoading, resumeContextMode, resumeContextTree, resumeContextError,
             openResumeModal, closeResumeModal, confirmResume, getTreeJson, syncTreeToText, onTreeNodeUpdate
