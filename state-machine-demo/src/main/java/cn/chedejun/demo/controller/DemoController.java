@@ -47,7 +47,13 @@ public class DemoController {
         String address = req.address() != null && !req.address().isBlank() ? req.address() : "北京市朝阳区";
 
         OrderContext ctx = new OrderContext(orderId, stock, amount);
+        OrderContext.UserInfo userInfo = new OrderContext.UserInfo();
+        userInfo.setUserName("chedejun");
+        userInfo.setUserPhone("abcd123");
         ctx.setShippingAddress(address);
+        ctx.put("abc","1111111111");
+        ctx.setUser(userInfo);
+
 
         try {
             ExecuteResult result = orderMachine.execute(ctx, orderId);

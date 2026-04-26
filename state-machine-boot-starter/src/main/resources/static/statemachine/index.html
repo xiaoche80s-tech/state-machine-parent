@@ -565,6 +565,15 @@
                     </div>
                     <div v-if="resumeContextError" style="color:var(--red);font-size:0.75rem;margin-top:4px">{{ resumeContextError }}</div>
                 </div>
+                <div class="form-group" style="margin-top:8px">
+                    <label class="form-label">JSON 补充输入</label>
+                    <textarea v-model="resumeMergeText" class="form-input form-textarea" style="min-height:80px;font-size:0.8rem" placeholder='{"key": "value"}'></textarea>
+                    <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
+                        <button class="btn btn-sm" @click="mergeJsonToTree">合并到 Context</button>
+                        <span v-if="mergeError" style="color:var(--red);font-size:0.75rem">{{ mergeError }}</span>
+                        <span v-if="mergeSuccess" style="color:var(--green);font-size:0.75rem">已合并</span>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-cancel" @click="closeResumeModal">取消</button>

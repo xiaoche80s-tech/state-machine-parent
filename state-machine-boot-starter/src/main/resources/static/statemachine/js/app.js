@@ -83,6 +83,9 @@ createApp({
         const resumeContextMode = ref('tree'); // 'text' or 'tree'
         const resumeContextTree = ref([]);
         const resumeContextError = ref('');
+        const resumeMergeText = ref('');
+        const mergeError = ref('');
+        const mergeSuccess = ref(false);
 
         function parseJsonTree(obj, path = '') {
             if (obj === null || obj === undefined) return [{ key: path || '(root)', type: 'null', value: 'null', editable: false }];
@@ -125,7 +128,7 @@ createApp({
                 }
             }
             // If all keys are numeric indices, return array
-            const allNumeric = Object.keys(result).every(k => /^\d+$/.test(k));
+            const allNumeric = Object.keys(result).every(k => /^\d+$/.test(k) || /^\[\d+\]$/.test(k));
             return allNumeric ? Object.values(result) : result;
         }
 
@@ -135,6 +138,109 @@ createApp({
 
         function onTreeNodeUpdate(idx, value) {
             resumeContextTree.value[idx].value = value;
+        }
+
+        function mergeJsonToTree() {
+            mergeError.value = '';
+            mergeSuccess.value = false;
+            if (!resumeMergeText.value.trim()) {
+                mergeError.value = '请输入 JSON 数据';
+                return;
+            }
+            let mergeObj;
+            try {
+                mergeObj = JSON.parse(resumeMergeText.value);
+            } catch (e) {
+                mergeError.value = 'JSON 格式错误: ' + e.message;
+                return;
+            }
+            if (typeof mergeObj !== 'object' || mergeObj === null || Array.isArray(mergeObj)) {
+                mergeError.value = '仅支持 JSON 对象格式（非数组）';
+                return;
+            }
+            // Merge into tree: only replace null values or add missing keys
+            mergeIntoTree(resumeContextTree.value, mergeObj);
+            // Sync the tree back to the text JSON
+            syncTreeToText();
+            mergeSuccess.value = true;
+            setTimeout(() => { mergeSuccess.value = false; }, 2000);
+        }
+
+        function mergeIntoTree(treeNodes, sourceObj) {
+            const existingKeys = new Set();
+            for (const node of treeNodes) {
+                if (sourceObj.hasOwnProperty(node.key)) {
+                    existingKeys.add(node.key);
+                    const sourceVal = sourceObj[node.key];
+                    if (node.children) {
+                        // 已有子节点
+                        if (Array.isArray(sourceVal)) {
+                            // 数组按索引合并：替换 null 元素
+                            for (let i = 0; i < Math.min(node.children.length, sourceVal.length); i++) {
+                                const child = node.children[i];
+                                if (child.children) {
+                                    if (typeof sourceVal[i] === 'object' && sourceVal[i] !== null && !Array.isArray(sourceVal[i])) {
+                                        mergeIntoTree(child.children, sourceVal[i]);
+                                    }
+                                } else if (child.value === null || child.value === 'null') {
+                                    child.value = sourceVal[i];
+                                    child.type = typeof sourceVal[i];
+                                    if (sourceVal[i] === null) child.type = 'null';
+                                }
+                            }
+                        } else if (typeof sourceVal === 'object' && sourceVal !== null && !Array.isArray(sourceVal)) {
+                            // 对象递归合并
+                            mergeIntoTree(node.children, sourceVal);
+                        }
+                    } else {
+                        // 叶子节点：仅当值为 null 时替换
+                        if (node.value === null || node.value === 'null') {
+                            if (Array.isArray(sourceVal)) {
+                                node.children = parseJsonTree(sourceVal, node.key);
+                                node.value = undefined;
+                                node.type = 'array';
+                            } else if (typeof sourceVal === 'object' && sourceVal !== null) {
+                                node.children = parseJsonTree(sourceVal, node.key);
+                                node.value = undefined;
+                                node.type = 'object';
+                            } else {
+                                node.value = sourceVal;
+                                node.type = typeof sourceVal;
+                                if (sourceVal === null) node.type = 'null';
+                            }
+                        }
+                    }
+                }
+            }
+            // 添加 source 中存在但树中没有的 key
+            for (const key of Object.keys(sourceObj)) {
+                if (!existingKeys.has(key)) {
+                    const val = sourceObj[key];
+                    if (Array.isArray(val)) {
+                        treeNodes.push({
+                            key,
+                            type: 'array',
+                            children: parseJsonTree(val, key),
+                            editable: true
+                        });
+                    } else if (typeof val === 'object' && val !== null) {
+                        treeNodes.push({
+                            key,
+                            type: 'object',
+                            children: parseJsonTree(val, key),
+                            editable: true
+                        });
+                    } else {
+                        treeNodes.push({
+                            key,
+                            type: typeof val,
+                            value: val,
+                            path: key,
+                            editable: true
+                        });
+                    }
+                }
+            }
         }
 
         function syncTreeToText() {
@@ -171,6 +277,9 @@ createApp({
             resumeForm.value = { instanceId: '', currentState: '', expectedState: '', contextJson: '' };
             resumeContextTree.value = [];
             resumeContextError.value = '';
+            resumeMergeText.value = '';
+            mergeError.value = '';
+            mergeSuccess.value = false;
         }
 
         async function confirmResume() {
@@ -702,7 +811,9 @@ createApp({
             drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer, toggleDrawerIo, isDrawerIoExpanded,
             toastMsg, toastVisible, showToast,
             resumeModalVisible, resumeForm, resumeLoading, resumeContextMode, resumeContextTree, resumeContextError,
-            openResumeModal, closeResumeModal, confirmResume, getTreeJson, syncTreeToText, onTreeNodeUpdate
+            resumeMergeText, mergeError, mergeSuccess,
+            openResumeModal, closeResumeModal, confirmResume, getTreeJson, syncTreeToText, onTreeNodeUpdate,
+            mergeJsonToTree
         };
     }
 }).mount('#app');
