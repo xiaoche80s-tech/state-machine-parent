@@ -120,6 +120,7 @@ public class DemoController {
         return instanceRepository.findByMachineName("order-process", 0, limit).stream()
             .map(r -> Map.<String, Object>of(
                 "id", r.id(),
+                "businessId", r.businessId() != null ? r.businessId() : "",
                 "status", r.status(),
                 "currentState", r.currentState(),
                 "retryCount", r.retryCount(),
@@ -146,19 +147,20 @@ public class DemoController {
             )).toList();
 
         return Map.of(
-            "instance", Map.of("id", instance.get().id(), "status", instance.get().status()),
+            "instance", Map.of("id", instance.get().id(), "status", instance.get().status(),
+                "businessId", instance.get().businessId() != null ? instance.get().businessId() : ""),
             "snapshots", snaps
         );
     }
 
     /**
-     * 重置失败订单并重试
+     * 重试失败订单（自动从快照恢复 context）
      */
     @PostMapping("/orders/{id}/retry")
     public Map<String, String> retryOrder(@PathVariable String id) {
-        instanceRepository.updateState(id, "check-inventory", "RUNNING", null);
-        instanceRepository.setRetryCount(id, 0);
-        return Map.of("message", "已重置为 RUNNING");
+        orderMachine.retry(id);
+        var updated = instanceRepository.findById(id).orElse(null);
+        return Map.of("message", "已重新执行，当前状态: " + (updated != null ? updated.status() : "unknown"));
     }
 
     // ===== 出库流程 =====
@@ -184,7 +186,7 @@ public class DemoController {
                 "instanceId", result.instanceId(),
                 "status", result.status(),
                 "currentState", result.currentState(),
-                "message", "REACHED".equals(result.status()) ? "停在 " + result.currentState() + "，后续还有状态" : "出库执行完成"
+                "message", result.status()
             );
         } catch (StateMachineException e) {
             var instances = instanceRepository.findByMachineName("outbound-process", 0, 1);
@@ -251,6 +253,7 @@ public class DemoController {
         return instanceRepository.findByMachineName("outbound-process", 0, limit).stream()
             .map(r -> Map.<String, Object>of(
                 "id", r.id(),
+                "businessId", r.businessId() != null ? r.businessId() : "",
                 "status", r.status(),
                 "currentState", r.currentState(),
                 "retryCount", r.retryCount(),
@@ -277,7 +280,8 @@ public class DemoController {
             )).toList();
 
         return Map.of(
-            "instance", Map.of("id", instance.get().id(), "status", instance.get().status()),
+            "instance", Map.of("id", instance.get().id(), "status", instance.get().status(),
+                "businessId", instance.get().businessId() != null ? instance.get().businessId() : ""),
             "snapshots", snaps
         );
     }

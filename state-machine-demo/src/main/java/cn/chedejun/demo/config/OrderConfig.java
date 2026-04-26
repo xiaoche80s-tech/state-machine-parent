@@ -25,7 +25,7 @@ public class OrderConfig {
             .suspendState("await-ship-confirm", this::awaitShipConfirm)
             .state("ship-order", this::shipOrder)
             .state("send-notification", this::sendNotification)
-            .suspendState("notify-shortage", this::notifyShortage)
+            .state("notify-shortage", this::notifyShortage)
             .state("order-failed", this::orderFailed)
             // 库存充足 -> 支付
             .transition("check-inventory", "process-payment", ctx -> ctx.getStock() > 0)
