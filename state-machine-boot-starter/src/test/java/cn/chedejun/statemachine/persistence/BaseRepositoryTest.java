@@ -22,13 +22,13 @@ public abstract class BaseRepositoryTest {
     private void createTablesIfNotExists(DataSource ds) {
         JdbcTemplate ddl = new JdbcTemplate(ds);
         try {
+            ddl.execute("DROP TABLE IF EXISTS state_machine_snapshots");
+            ddl.execute("DROP TABLE IF EXISTS state_machine_instances");
+            ddl.execute("DROP TABLE IF EXISTS state_machine_definitions");
             ddl.execute("RUNSCRIPT FROM 'classpath:/ddl/h2.sql'");
         } catch (Exception e) { throw new RuntimeException("Failed to execute DDL", e); }
     }
 
     private void cleanTables() {
-        jdbcTemplate.execute("DELETE FROM state_machine_snapshots");
-        jdbcTemplate.execute("DELETE FROM state_machine_instances");
-        jdbcTemplate.execute("DELETE FROM state_machine_definitions");
     }
 }

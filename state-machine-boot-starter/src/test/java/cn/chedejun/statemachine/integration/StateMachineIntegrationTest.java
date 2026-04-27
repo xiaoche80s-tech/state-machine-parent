@@ -36,6 +36,7 @@ class DdlExecutor {
             var template = new JdbcTemplate(dataSource);
             String sql = new String(Objects.requireNonNull(DdlExecutor.class.getResourceAsStream("/ddl/postgresql.sql")).readAllBytes(), StandardCharsets.UTF_8);
             for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) template.execute(t); }
+            try { template.execute("ALTER TABLE state_machine_snapshots ADD COLUMN snapshot_type VARCHAR(16) NOT NULL DEFAULT 'NODE'"); } catch (Exception e) { /* 列已存在 */ }
         } catch (Exception e) { throw new RuntimeException("Failed to execute DDL", e); }
     }
 }
@@ -193,11 +194,16 @@ class StateMachineIntegrationTest {
         assertEquals("test-machine", instance.get().machineName());
 
         var snapshots = snapshotRepository().findByInstanceId(result.instanceId());
-        assertEquals(3, snapshots.size());
+        assertEquals(5, snapshots.size());
+        assertEquals("NODE", snapshots.get(0).snapshotType());
+        assertEquals("ROUTE", snapshots.get(1).snapshotType());
+        assertEquals("NODE", snapshots.get(2).snapshotType());
+        assertEquals("ROUTE", snapshots.get(3).snapshotType());
+        assertEquals("NODE", snapshots.get(4).snapshotType());
         assertEquals("validate", snapshots.get(0).stateName());
-        assertEquals("process", snapshots.get(1).stateName());
-        assertEquals("complete", snapshots.get(2).stateName());
-        snapshots.forEach(s -> assertEquals("SUCCESS", s.status()));
+        assertEquals("process", snapshots.get(2).stateName());
+        assertEquals("complete", snapshots.get(4).stateName());
+        snapshots.stream().filter(s -> "NODE".equals(s.snapshotType())).forEach(s -> assertEquals("SUCCESS", s.status()));
     }
 
     @Test

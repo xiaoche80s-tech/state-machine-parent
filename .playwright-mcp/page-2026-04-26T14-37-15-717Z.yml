@@ -1,0 +1,83 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - img [ref=e6]
+      - generic [ref=e9]: StateMachine
+    - navigation [ref=e10]:
+      - link "概览" [ref=e11] [cursor=pointer]:
+        - /url: "#/"
+        - img [ref=e12]
+        - generic [ref=e17]: 概览
+  - main [ref=e18]:
+    - generic [ref=e20]:
+      - link "概览" [ref=e21] [cursor=pointer]:
+        - /url: "#/"
+      - img [ref=e22]
+      - generic [ref=e24]: order-process
+    - generic [ref=e26]:
+      - generic [ref=e28]:
+        - heading "order-process" [level=1] [ref=e29]
+        - paragraph [ref=e30]: 状态机流程定义
+      - generic [ref=e31]:
+        - heading "实例概览" [level=2] [ref=e33]
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - img [ref=e37]
+            - generic [ref=e40]:
+              - generic [ref=e41]: "0"
+              - generic [ref=e42]: 运行中
+          - generic [ref=e43]:
+            - img [ref=e45]
+            - generic [ref=e49]:
+              - generic [ref=e50]: "0"
+              - generic [ref=e51]: 失败
+          - generic [ref=e52]:
+            - img [ref=e54]
+            - generic [ref=e57]:
+              - generic [ref=e58]: "0"
+              - generic [ref=e59]: 已挂起
+      - generic [ref=e60]:
+        - generic [ref=e62]:
+          - generic [ref=e63]: "过滤:"
+          - button "全部" [ref=e64] [cursor=pointer]
+          - button "运行中" [ref=e65] [cursor=pointer]
+          - button "已完成" [ref=e66] [cursor=pointer]
+          - button "已到达" [ref=e67] [cursor=pointer]
+          - button "失败" [ref=e68] [cursor=pointer]
+          - button "已挂起" [ref=e69] [cursor=pointer]
+        - paragraph [ref=e72]: 暂无实例
+        - generic [ref=e73]:
+          - button "首页" [disabled] [ref=e74]
+          - button "上一页" [disabled] [ref=e75]
+          - generic [ref=e76]: 第 1 / 0 页，共 0 条
+          - button "下一页" [disabled] [ref=e77]
+          - button "末页" [disabled] [ref=e78]
+  - generic [ref=e80]:
+    - heading "实例详情" [level=2] [ref=e81]
+    - button [ref=e82] [cursor=pointer]:
+      - img [ref=e83]
+  - generic:
+    - generic:
+      - generic:
+        - heading "恢复挂起实例" [level=2]
+        - button:
+          - img
+      - generic:
+        - generic:
+          - generic: 实例 ID
+        - generic:
+          - generic: 当前状态（挂起点）
+        - generic:
+          - generic: 预期状态
+          - textbox
+        - generic:
+          - generic:
+            - generic: IN 参数（Context）
+            - generic:
+              - button "树形"
+              - button "文本"
+          - generic:
+            - generic: 无参数
+      - generic:
+        - button "取消"
+        - button "恢复执行"

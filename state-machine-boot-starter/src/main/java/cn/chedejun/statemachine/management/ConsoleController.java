@@ -82,7 +82,7 @@ public class ConsoleController {
         if (inst.isEmpty()) return Map.of("error", "Instance not found");
         var snaps = snapshotRepository.findByInstanceId(id).stream()
             .map(s -> new SnapshotDTO(s.id(), s.stateName(), s.inputJson(), s.outputJson(),
-                s.status(), s.errorMessage(), s.attempt(), s.executedAt())).toList();
+                s.status(), s.errorMessage(), s.attempt(), s.snapshotType(), s.executedAt())).toList();
         var dto = new InstanceDTO(inst.get().id(), inst.get().machineName(), inst.get().definitionVersion(),
             inst.get().currentState(), inst.get().status(), inst.get().businessId(), inst.get().retryCount(),
             inst.get().errorMessage(), inst.get().createdAt(), inst.get().updatedAt());
@@ -136,9 +136,10 @@ public class ConsoleController {
         try {
             machine.get().retry(id);
             var updated = instanceRepository.findById(id);
-            return Map.of("message", "Instance re-executed from state: " + updated.map(r -> r.currentState()).orElse("unknown"));
+            return Map.of("message", "Instance re-executed from state: " + updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
         } catch (Exception e) {
             return Map.of("message", "Re-execution failed: " + e.getMessage());
         }
     }
+
 }
