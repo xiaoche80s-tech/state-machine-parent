@@ -14,7 +14,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -37,7 +36,6 @@ public class InstanceExecutionService<C> {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
     public ExecuteResult execute(StateMachine<C> machine, C context, BusinessId businessId) {
         InstanceId instanceId = InstanceId.generate();
         DefinitionId definitionId = resolveDefinitionId(machine);
@@ -56,7 +54,6 @@ public class InstanceExecutionService<C> {
             saved.errorMessage(), businessId.value(), saved.createdAt());
     }
 
-    @Transactional
     public void resumeByBusinessId(StateMachine<C> machine, BusinessId businessId,
                                     StateName expectedState, Consumer<C> contextMerger) {
         InstanceData data = instanceRepo.findByBusinessId(MachineName.of(machine.getName()), businessId)
@@ -93,7 +90,6 @@ public class InstanceExecutionService<C> {
         }
     }
 
-    @Transactional
     public void resumeByInstanceId(StateMachine<C> machine, InstanceId instanceId,
                                     StateName expectedState, Consumer<C> contextMerger) {
         InstanceData data = instanceRepo.findById(instanceId)
@@ -131,7 +127,6 @@ public class InstanceExecutionService<C> {
         }
     }
 
-    @Transactional
     public void retryWithCustomContext(StateMachine<C> machine, InstanceId instanceId, C context) {
         InstanceData data = instanceRepo.findById(instanceId)
             .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
@@ -143,7 +138,6 @@ public class InstanceExecutionService<C> {
         executeLoop(instanceId, context, data.currentState().value(), machine);
     }
 
-    @Transactional
     public void retry(StateMachine<C> machine, InstanceId instanceId) {
         InstanceData data = instanceRepo.findById(instanceId)
             .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
