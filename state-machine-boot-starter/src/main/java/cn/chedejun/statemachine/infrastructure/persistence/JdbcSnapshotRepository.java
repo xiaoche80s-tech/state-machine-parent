@@ -3,6 +3,7 @@ package cn.chedejun.statemachine.infrastructure.persistence;
 import cn.chedejun.statemachine.domain.data.SnapshotData;
 import cn.chedejun.statemachine.domain.repository.SnapshotRepository;
 import cn.chedejun.statemachine.domain.shared.*;
+import cn.chedejun.statemachine.domain.snapshot.ExecutionSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,7 +29,7 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
     }
 
     @Override
-    public SnapshotData save(SnapshotData snapshot) {
+    public SnapshotData save(ExecutionSnapshot snapshot) {
         jdbcTemplate.update(
             "INSERT INTO state_machine_snapshots (id, instance_id, state_name, input, output, status, error_message, attempt, snapshot_type) " +
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -44,7 +45,7 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
                 ps.setInt(i++, snapshot.attempt());
                 ps.setString(i++, snapshot.snapshotType());
             });
-        return snapshot;
+        return toSnapshotData(snapshot);
     }
 
     @Override
@@ -59,6 +60,14 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
 
     private void setJson(PreparedStatement ps, int idx, String json) throws SQLException {
         ps.setObject(idx, json, Types.OTHER);
+    }
+
+    private SnapshotData toSnapshotData(ExecutionSnapshot snapshot) {
+        return new SnapshotData(
+            snapshot.id(), snapshot.instanceId(), snapshot.stateName(),
+            snapshot.inputJson(), snapshot.outputJson(), snapshot.status(),
+            snapshot.errorMessage(), snapshot.attempt(), snapshot.snapshotType(),
+            snapshot.executedAt());
     }
 
     private RowMapper<SnapshotData> rowMapper() {
