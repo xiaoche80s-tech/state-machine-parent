@@ -294,7 +294,7 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        var result = consoleController.getInstances("test-machine", null, 0, 20);
+        var result = consoleController.getInstances("test-machine", null, null, null, 0, 20);
         assertTrue((long) result.get("total") > 0);
         var instances = (List<?>) result.get("instances");
         assertFalse(instances.isEmpty());
