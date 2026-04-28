@@ -47,7 +47,7 @@ public class InstanceExecutionService<C> {
         String initialState = machine.getStates().get(0).getName();
         executeLoop(instanceId, context, initialState, machine);
 
-        InstanceData saved = instanceRepo.findById(instanceId).orElseThrow();
+        InstanceData saved = requireInstance(instanceId);
         return new ExecuteResult(
             saved.id().value(), machine.getName(), machine.getVersion(),
             saved.currentState().value(), saved.status().name(),
@@ -226,14 +226,14 @@ public class InstanceExecutionService<C> {
                 }
 
                 log.error("[state-machine] State '{}' exhausted {} retries (instance {})", stateName, retryCount + 1, instanceId);
-                InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                InstanceData d = requireInstance(instanceId);
                 instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
                 throw new StateMachineException(
                     String.format("State '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
             }
 
             if (state.isSuspended()) {
-                InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                InstanceData d = requireInstance(instanceId);
                 instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.SUSPENDED, null));
                 return;
             }
@@ -262,7 +262,7 @@ public class InstanceExecutionService<C> {
                     SnapshotId.generate(), instanceId, StateName.of(stateName),
                     serialize(context), StateName.of(nextState.get())));
                 current[0] = nextState.get();
-                InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                InstanceData d = requireInstance(instanceId);
                 instanceRepo.save(d.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
             } catch (StateMachineException e) {
                 throw e;
@@ -271,7 +271,7 @@ public class InstanceExecutionService<C> {
                 snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
                     SnapshotId.generate(), instanceId, StateName.of(stateName),
                     serialize(context), e.getMessage()));
-                InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                InstanceData d = requireInstance(instanceId);
                 instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
                 throw new StateMachineException(
                     String.format("Transition from '%s' failed: %s", stateName, e.getMessage()), e);
