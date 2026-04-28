@@ -235,6 +235,10 @@
                             <button class="filter-chip filter-chip--blue" :class="{active: machineFilterStatus==='REACHED'}" @click="machineFilterStatus='REACHED'; machinePage=0; loadMachineInstances()">已到达</button>
                             <button class="filter-chip filter-chip--red" :class="{active: machineFilterStatus==='FAILED'}" @click="machineFilterStatus='FAILED'; machinePage=0; loadMachineInstances()">失败</button>
                             <button class="filter-chip filter-chip--blue" :class="{active: machineFilterStatus==='SUSPENDED'}" @click="machineFilterStatus='SUSPENDED'; machinePage=0; loadMachineInstances()">已挂起</button>
+                            <input type="text" class="filter-input" placeholder="业务ID" v-model="machineFilterBusinessId" @keyup.enter="machinePage=0; loadMachineInstances()" />
+                            <button v-if="machineFilterBusinessId" class="filter-clear" @click="machineFilterBusinessId=''; machinePage=0; loadMachineInstances()">✕</button>
+                            <input type="text" class="filter-input" placeholder="流程实例ID" v-model="machineFilterInstanceId" @keyup.enter="machinePage=0; loadMachineInstances()" />
+                            <button v-if="machineFilterInstanceId" class="filter-clear" @click="machineFilterInstanceId=''; machinePage=0; loadMachineInstances()">✕</button>
                         </div>
                     </div>
                     <div class="instance-list">
@@ -374,43 +378,62 @@
                             <span class="snapshot-count">{{ instanceDetail.snapshots.length }} 步</span>
                         </div>
                         <div class="timeline">
-                            <div v-for="(s, idx) in instanceDetail.snapshots" :key="s.id" class="timeline-item">
-                                <div class="timeline-marker" :class="'marker-' + s.status.toLowerCase()">
-                                    <svg v-if="s.status === 'SUCCESS'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                </div>
-                                <div class="timeline-content">
-                                    <div class="timeline-header">
-                                        <span class="timeline-step">{{ s.stateName }}</span>
-                                        <div class="timeline-meta">
-                                            <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
-                                            <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
-                                        </div>
+                            <div v-for="(s, idx) in instanceDetail.snapshots" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE' }">
+                                <!-- ROUTE snapshot: compact route display -->
+                                <template v-if="s.snapshotType === 'ROUTE'">
+                                    <div class="timeline-marker route-marker">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                     </div>
-                                    <div class="timeline-io" v-if="s.input || s.output">
-                                        <div class="io-block" v-if="s.input">
-                                            <div class="io-header">
-                                                <span class="io-label io-label--in">IN</span>
-                                                <div class="io-actions">
-                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
-                                                    <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
-                                                </div>
+                                    <div class="timeline-content">
+                                        <div class="timeline-header">
+                                            <span class="timeline-step route-step">{{ s.stateName }} <span class="route-arrow">&rarr;</span> {{ parseRouteOutput(s.output) }}</span>
+                                            <div class="timeline-meta">
+                                                <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                                <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
                                             </div>
-                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                         </div>
-                                        <div class="io-block" v-if="s.output">
-                                            <div class="io-header">
-                                                <span class="io-label io-label--out">OUT</span>
-                                                <div class="io-actions">
-                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
-                                                    <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
-                                                </div>
-                                            </div>
-                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
-                                        </div>
+                                        <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
                                     </div>
-                                    <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
-                                </div>
+                                </template>
+                                <!-- NODE snapshot: existing display -->
+                                <template v-else>
+                                    <div class="timeline-marker" :class="'marker-' + s.status.toLowerCase()">
+                                        <svg v-if="s.status === 'SUCCESS'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                        <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </div>
+                                    <div class="timeline-content">
+                                        <div class="timeline-header">
+                                            <span class="timeline-step">{{ s.stateName }}</span>
+                                            <div class="timeline-meta">
+                                                <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                                <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="timeline-io" v-if="s.input || s.output">
+                                            <div class="io-block" v-if="s.input">
+                                                <div class="io-header">
+                                                    <span class="io-label io-label--in">IN</span>
+                                                    <div class="io-actions">
+                                                        <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
+                                                        <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                                    </div>
+                                                </div>
+                                                <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
+                                            </div>
+                                            <div class="io-block" v-if="s.output">
+                                                <div class="io-header">
+                                                    <span class="io-label io-label--out">OUT</span>
+                                                    <div class="io-actions">
+                                                        <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
+                                                        <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                                    </div>
+                                                </div>
+                                                <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
+                                            </div>
+                                        </div>
+                                        <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </div>
@@ -478,43 +501,62 @@
                         <span class="snapshot-count">{{ drawerSnapshots.length }} 步</span>
                     </div>
                     <div class="timeline">
-                        <div v-for="(s, idx) in drawerSnapshots" :key="s.id" class="timeline-item">
-                            <div class="timeline-marker" :class="'marker-' + s.status.toLowerCase()">
-                                <svg v-if="s.status === 'SUCCESS'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            </div>
-                            <div class="timeline-content">
-                                <div class="timeline-header">
-                                    <span class="timeline-step">{{ s.stateName }}</span>
-                                    <div class="timeline-meta">
-                                        <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
-                                        <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
-                                    </div>
+                        <div v-for="(s, idx) in drawerSnapshots" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE' }">
+                            <!-- ROUTE snapshot: compact route display -->
+                            <template v-if="s.snapshotType === 'ROUTE'">
+                                <div class="timeline-marker route-marker">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                 </div>
-                                <div class="timeline-io" v-if="s.input || s.output">
-                                    <div class="io-block" v-if="s.input">
-                                        <div class="io-header">
-                                            <span class="io-label io-label--in">IN</span>
-                                            <div class="io-actions">
-                                                <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
-                                                <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
-                                            </div>
+                                <div class="timeline-content">
+                                    <div class="timeline-header">
+                                        <span class="timeline-step route-step">{{ s.stateName }} <span class="route-arrow">&rarr;</span> {{ parseRouteOutput(s.output) }}</span>
+                                        <div class="timeline-meta">
+                                            <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                            <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
                                         </div>
-                                        <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                     </div>
-                                    <div class="io-block" v-if="s.output">
-                                        <div class="io-header">
-                                            <span class="io-label io-label--out">OUT</span>
-                                            <div class="io-actions">
-                                                <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
-                                                <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
-                                            </div>
-                                        </div>
-                                        <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
-                                    </div>
+                                    <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
                                 </div>
-                                <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
-                            </div>
+                            </template>
+                            <!-- NODE snapshot: existing display -->
+                            <template v-else>
+                                <div class="timeline-marker" :class="'marker-' + s.status.toLowerCase()">
+                                    <svg v-if="s.status === 'SUCCESS'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </div>
+                                <div class="timeline-content">
+                                    <div class="timeline-header">
+                                        <span class="timeline-step">{{ s.stateName }}</span>
+                                        <div class="timeline-meta">
+                                            <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                            <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="timeline-io" v-if="s.input || s.output">
+                                        <div class="io-block" v-if="s.input">
+                                            <div class="io-header">
+                                                <span class="io-label io-label--in">IN</span>
+                                                <div class="io-actions">
+                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
+                                                    <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                                </div>
+                                            </div>
+                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
+                                        </div>
+                                        <div class="io-block" v-if="s.output">
+                                            <div class="io-header">
+                                                <span class="io-label io-label--out">OUT</span>
+                                                <div class="io-actions">
+                                                    <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
+                                                    <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                                </div>
+                                            </div>
+                                            <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
+                                        </div>
+                                    </div>
+                                    <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
+                                </div>
+                            </template>
                         </div>
                     </div>
                 </div>

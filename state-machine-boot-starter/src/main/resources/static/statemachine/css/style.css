@@ -367,6 +367,43 @@ a:hover { color: var(--primary-light); }
 .filter-chip--blue.active { background: #3b82f6; border-color: #3b82f6; }
 .filter-chip--red.active { background: var(--red); border-color: var(--red); }
 
+/* ===== Filter Input ===== */
+.filter-input {
+    font-size: 0.78rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--gray-200);
+    background: var(--surface);
+    color: var(--gray-700);
+    font-family: var(--mono);
+    width: 140px;
+    transition: all var(--transition);
+}
+.filter-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-bg);
+}
+.filter-input::placeholder {
+    color: var(--gray-400);
+    font-family: var(--sans);
+}
+.filter-clear {
+    font-size: 0.72rem;
+    padding: 4px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--gray-200);
+    background: var(--surface);
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: all var(--transition);
+    line-height: 1;
+}
+.filter-clear:hover {
+    border-color: var(--red);
+    color: var(--red);
+}
+
 /* ===== Instance List ===== */
 .instance-list { padding: 4px 0; }
 
@@ -722,6 +759,29 @@ a:hover { color: var(--primary-light); }
     padding: 4px 8px;
     border-radius: var(--radius-sm);
     margin-top: 2px;
+}
+
+/* ===== Route-type Timeline Item ===== */
+.timeline-item.route-type {
+    background: var(--primary-bg);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin: 4px 0;
+    border: 1px solid #d4d7fb;
+}
+.timeline-item.route-type .timeline-marker.route-marker {
+    background: var(--primary-bg);
+    color: var(--primary);
+    border: 1.5px solid var(--primary-light);
+}
+.timeline-item.route-type .timeline-step.route-step {
+    font-weight: 600;
+    color: var(--gray-800);
+}
+.route-arrow {
+    color: var(--primary);
+    margin: 0 6px;
+    font-weight: 700;
 }
 
 /* ===== Buttons ===== */

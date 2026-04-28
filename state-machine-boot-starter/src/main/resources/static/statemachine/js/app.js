@@ -38,6 +38,8 @@ createApp({
         const filterStatus = ref('');
         const machineInstances = ref([]);
         const machineFilterStatus = ref('');
+        const machineFilterBusinessId = ref('');
+        const machineFilterInstanceId = ref('');
         const machinePage = ref(0);
         const machinePageSize = ref(10);
         const machineTotalPages = ref(0);
@@ -65,6 +67,7 @@ createApp({
         }
         function shortJson(s) { return s.length > 60 ? s.substring(0, 60) + '\u2026' : s; }
         function formatJson(s) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } }
+        function parseRouteOutput(output) { try { return JSON.parse(output); } catch { return output; } }
         function toggle(k) { expanded.value[k] = !expanded.value[k]; }
 
         const toastMsg = ref('');
@@ -421,7 +424,9 @@ createApp({
         }
 
         async function loadMachineInstances() {
-            const resp = await API.getInstances(machineName.value, machineFilterStatus.value, machinePage.value, machinePageSize.value);
+            const resp = await API.getInstances(machineName.value, machineFilterStatus.value,
+                machineFilterBusinessId.value, machineFilterInstanceId.value,
+                machinePage.value, machinePageSize.value);
             machineInstances.value = resp.instances;
             machineTotalPages.value = Math.ceil(resp.total / machinePageSize.value);
             machineTotalElements.value = resp.total;
@@ -801,8 +806,9 @@ createApp({
         return {
             currentView, machines, machineName, versions, instances, filterStatus, instanceDetail, expanded, loading,
             totalMachines, totalRunning, totalFailed, totalSuspended, currentMachineStats, machineInstances, machineFilterStatus,
+            machineFilterBusinessId, machineFilterInstanceId,
             machinePage, machinePageSize, machineTotalPages, machineTotalElements,
-            shortId, statusClass, statusLabel, shortJson, formatJson, toggle,
+            shortId, statusClass, statusLabel, shortJson, formatJson, parseRouteOutput, toggle,
             relativeTime, formatTime, formatTimeShort,
             getMachineHealth, isMachineActive, goInstance,
             getStateType, getTransitionsFrom,
