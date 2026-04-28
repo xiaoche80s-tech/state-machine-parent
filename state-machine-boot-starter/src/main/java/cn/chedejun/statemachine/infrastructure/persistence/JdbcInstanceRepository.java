@@ -25,7 +25,7 @@ public class JdbcInstanceRepository implements InstanceRepository {
             return Optional.ofNullable(jdbcTemplate.queryForObject(
                 "SELECT * FROM state_machine_instances WHERE id = ?", rowMapper(), id.value()));
         } catch (Exception e) {
-            log.warn("[state-machine] Failed to find instance by id={}", id, e);
+            log.warn("[state-machine] 按 ID 查询实例失败 id={}", id, e);
             return Optional.empty();
         }
     }
@@ -37,7 +37,7 @@ public class JdbcInstanceRepository implements InstanceRepository {
                 "SELECT * FROM state_machine_instances WHERE machine_name = ? AND business_id = ? ORDER BY created_at DESC LIMIT 1",
                 rowMapper(), machineName.value(), businessId.value()));
         } catch (Exception e) {
-            log.warn("[state-machine] Failed to find instance by businessId={} machineName={}",
+            log.warn("[state-machine] 按 businessId 查询实例失败 businessId={} machineName={}",
                      businessId.value(), machineName.value(), e);
             return Optional.empty();
         }

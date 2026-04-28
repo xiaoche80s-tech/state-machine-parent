@@ -53,7 +53,7 @@ public class StateMachineRegistry {
                 "maxDelayMs", machine.getRetryPolicy().getMaxDelayMs(),
                 "backoffFactor", machine.getRetryPolicy().getBackoffFactor()));
         } catch (Exception e) {
-            log.warn("[state-machine] Failed to serialize retry policy for machine {}:{}", name, version, e);
+            log.warn("[state-machine] 序列化状态机重试策略失败 {}:{}", name, version, e);
             retryPolicyJson = "{}";
         }
 
@@ -67,7 +67,7 @@ public class StateMachineRegistry {
             definitionRepository.save(data);
         }
         machines.put(machineKey(name, version), machine);
-        log.info("[state-machine] Registered machine {}:{}", name, version);
+        log.info("[state-machine] 注册状态机 {}:{}", name, version);
     }
 
     private String serializeJson(Object obj) {

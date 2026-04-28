@@ -83,7 +83,7 @@ public class StateMachineAutoConfiguration {
                     return bean;
                 }
                 if (bean instanceof StateMachineFacade<?> facade) {
-                    log.info("[state-machine] Auto-configured facade: {}", beanName);
+                    log.info("[state-machine] 自动配置门面: {}", beanName);
                     return bean;
                 }
                 return bean;
@@ -113,7 +113,7 @@ public class StateMachineAutoConfiguration {
                 StateMachineRegistry registry,
                 InstanceRepository instanceRepository,
                 DefinitionRepository definitionRepository) {
-            log.info("[state-machine] Management endpoint enabled");
+            log.info("[state-machine] 管理端点已启用");
             return new cn.chedejun.statemachine.management.StateMachineEndpoint(registry, instanceRepository, definitionRepository);
         }
     }
@@ -128,7 +128,7 @@ public class StateMachineAutoConfiguration {
                 InstanceRepository instanceRepository,
                 SnapshotRepository snapshotRepository,
                 InstanceExecutionService<Object> executionService) {
-            log.info("[state-machine] Console enabled at /statemachine");
+            log.info("[state-machine] 控制台已启用 /statemachine");
             return new cn.chedejun.statemachine.management.ConsoleController(
                 registry, instanceRepository, snapshotRepository, executionService);
         }

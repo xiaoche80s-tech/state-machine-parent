@@ -208,7 +208,7 @@ public class InstanceExecutionService<C> {
                 instanceRepo.save(requireInstance(instanceId)
                     .withIncrementedRetry(0, null));
             } catch (Exception e) {
-                log.error("[state-machine] State '{}' action failed (instance {}, attempt {})", stateName, instanceId, attempt, e);
+                log.error("[state-machine] 状态 '{}' 执行失败 (实例 {}, 第 {} 次尝试)", stateName, instanceId, attempt, e);
                 snapshotRepo.save(ExecutionSnapshot.createFailed(
                     SnapshotId.generate(), instanceId, StateName.of(stateName),
                     inputJson, e.getMessage(), attempt));
@@ -225,7 +225,7 @@ public class InstanceExecutionService<C> {
                     continue;
                 }
 
-                log.error("[state-machine] State '{}' exhausted {} retries (instance {})", stateName, retryCount + 1, instanceId);
+                log.error("[state-machine] 状态 '{}' 耗尽 {} 次重试 (实例 {})", stateName, retryCount + 1, instanceId);
                 InstanceData d = requireInstance(instanceId);
                 instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
                 throw new StateMachineException(
@@ -267,7 +267,7 @@ public class InstanceExecutionService<C> {
             } catch (StateMachineException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("[state-machine] Transition from '{}' failed (instance {})", stateName, instanceId, e);
+                log.error("[state-machine] 状态转换从 '{}' 失败 (实例 {})", stateName, instanceId, e);
                 snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
                     SnapshotId.generate(), instanceId, StateName.of(stateName),
                     serialize(context), e.getMessage()));
@@ -289,7 +289,7 @@ public class InstanceExecutionService<C> {
 
     private String serialize(Object obj) {
         try { return objectMapper.writeValueAsString(obj); } catch (Exception e) {
-            log.warn("[state-machine] Failed to serialize object", e);
+            log.warn("[state-machine] 序列化对象失败", e);
             return "{}";
         }
     }

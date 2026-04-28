@@ -19,7 +19,7 @@ public class DdlInitializer {
 
     private void initialize() {
         if (!"update".equalsIgnoreCase(ddlAuto)) {
-            log.info("[state-machine] DDL auto-creation disabled (ddl-auto={})", ddlAuto);
+            log.info("[state-machine] DDL 自动创建已禁用 (ddl-auto={})", ddlAuto);
             return;
         }
         try {
@@ -28,16 +28,16 @@ public class DdlInitializer {
             String resourcePath = "/ddl/" + dbType + ".sql";
             var stream = getClass().getResourceAsStream(resourcePath);
             if (stream == null) {
-                log.warn("[state-machine] No DDL script for '{}', falling back to H2", dbType);
+                log.warn("[state-machine] 数据库 '{}' 无 DDL 脚本，回退使用 H2", dbType);
                 stream = getClass().getResourceAsStream("/ddl/h2.sql");
             }
             if (stream != null) {
                 String sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
                 for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) template.execute(t); }
-                log.info("[state-machine] Tables initialized using {}", resourcePath);
+                log.info("[state-machine] 数据表初始化完成，使用 {}", resourcePath);
             }
         } catch (Exception e) {
-            log.error("[state-machine] Failed to initialize tables", e);
+            log.error("[state-machine] 数据表初始化失败", e);
             throw new RuntimeException("Failed to initialize state machine tables", e);
         }
     }

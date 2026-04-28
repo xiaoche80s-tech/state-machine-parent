@@ -137,7 +137,7 @@ public class ConsoleController {
                         try {
                             objectMapper.readerForUpdating(ctx).readValue(cj);
                         } catch (Exception e) {
-                            log.error("[state-machine] Failed to parse contextJson for instance resume id={}", id, e);
+                            log.error("[state-machine] 恢复实例 {} 时解析 contextJson 失败", id, e);
                             throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
                         }
                     });
@@ -149,7 +149,7 @@ public class ConsoleController {
             return Map.of("success", true, "message", "已恢复执行", "currentState",
                 updated.map(i -> i.currentState().value()).orElse("unknown"));
         } catch (Exception e) {
-            log.error("[state-machine] Failed to resume instance id={}", id, e);
+            log.error("[state-machine] 恢复实例失败 id={}", id, e);
             return Map.of("success", false, "error", e.getMessage());
         }
     }
@@ -167,7 +167,7 @@ public class ConsoleController {
             var updated = instanceRepository.findById(InstanceId.of(id));
             return Map.of("message", "Instance re-executed from state: " + updated.map(i -> i.currentState().value()).orElse("unknown"));
         } catch (Exception e) {
-            log.error("[state-machine] Failed to retry instance id={}", id, e);
+            log.error("[state-machine] 重试实例失败 id={}", id, e);
             return Map.of("message", "Re-execution failed: " + e.getMessage());
         }
     }
