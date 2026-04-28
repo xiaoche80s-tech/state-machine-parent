@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -59,74 +60,14 @@ public class InstanceExecutionService<C> {
         InstanceData data = instanceRepo.findByBusinessId(MachineName.of(machine.getName()), businessId)
             .orElseThrow(() -> new StateMachineException(
                 "Instance not found for stateMachine=" + machine.getName() + ", businessId=" + businessId.value()));
-
-        if (!data.currentState().value().equals(expectedState.value()))
-            throw new StateMachineException(
-                String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
-
-        var snapshots = snapshotRepo.findByInstanceId(data.id());
-        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
-        C context = deserialize(contextJson != null ? contextJson : "{}", machine);
-        contextMerger.accept(context);
-
-        Optional<String> nextState = machine.findNextState(context, data.currentState().value());
-        if (nextState.isPresent()) {
-            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
-            if (updated == 0)
-                throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
-            instanceRepo.save(data.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
-            executeLoop(data.id(), context, nextState.get(), machine);
-        } else {
-            if (machine.hasOutgoingTransitions(data.currentState().value())) {
-                String availableTargets = machine.getTransitions().stream()
-                    .filter(t -> t.getFrom().equals(data.currentState().value()))
-                    .map(Transition::getTo)
-                    .collect(java.util.stream.Collectors.joining(", "));
-                String errorMsg = String.format("No matching transition from state '%s'. Available: %s",
-                    data.currentState().value(), availableTargets);
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.FAILED, errorMsg));
-                throw new StateMachineException(errorMsg);
-            } else {
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.COMPLETED, null));
-            }
-        }
+        resume(data, machine, expectedState, contextMerger);
     }
 
     public void resumeByInstanceId(StateMachine<C> machine, InstanceId instanceId,
                                     StateName expectedState, Consumer<C> contextMerger) {
         InstanceData data = instanceRepo.findById(instanceId)
             .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
-
-        if (!data.currentState().value().equals(expectedState.value()))
-            throw new StateMachineException(
-                String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
-
-        var snapshots = snapshotRepo.findByInstanceId(data.id());
-        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
-        C context = deserialize(contextJson != null ? contextJson : "{}", machine);
-        contextMerger.accept(context);
-
-        Optional<String> nextState = machine.findNextState(context, data.currentState().value());
-        if (nextState.isPresent()) {
-            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
-            if (updated == 0)
-                throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
-            instanceRepo.save(data.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
-            executeLoop(data.id(), context, nextState.get(), machine);
-        } else {
-            if (machine.hasOutgoingTransitions(data.currentState().value())) {
-                String availableTargets = machine.getTransitions().stream()
-                    .filter(t -> t.getFrom().equals(data.currentState().value()))
-                    .map(Transition::getTo)
-                    .collect(java.util.stream.Collectors.joining(", "));
-                String errorMsg = String.format("No matching transition from state '%s'. Available: %s",
-                    data.currentState().value(), availableTargets);
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.FAILED, errorMsg));
-                throw new StateMachineException(errorMsg);
-            } else {
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.COMPLETED, null));
-            }
-        }
+        resume(data, machine, expectedState, contextMerger);
     }
 
     public void retryWithCustomContext(StateMachine<C> machine, InstanceId instanceId, C context) {
@@ -182,42 +123,113 @@ public class InstanceExecutionService<C> {
         executeLoop(instanceId, context, data.currentState().value(), machine);
     }
 
-    private void executeLoop(InstanceId instanceId, C context, String startState, StateMachine<C> machine) {
-        String[] current = { startState };
-        int maxIterations = machine.getStates().size() * (machine.getRetryPolicy().getMaxAttempts() + 1) + 1;
-        int iteration = 0;
+    /**
+     * 公共恢复逻辑：恢复实例状态并继续执行
+     */
+    private void resume(InstanceData data, StateMachine<C> machine,
+                        StateName expectedState, Consumer<C> contextMerger) {
+        if (!data.currentState().value().equals(expectedState.value()))
+            throw new StateMachineException(
+                String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
 
-        while (iteration < maxIterations) {
-            iteration++;
-            String stateName = current[0];
-            State<C> state = machine.findState(stateName)
+        var snapshots = snapshotRepo.findByInstanceId(data.id());
+        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
+        C context = deserialize(contextJson != null ? contextJson : "{}", machine);
+        contextMerger.accept(context);
+
+        Optional<String> nextState = machine.findNextState(context, data.currentState().value());
+        if (nextState.isPresent()) {
+            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
+            if (updated == 0)
+                throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
+            instanceRepo.save(data.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
+            executeLoop(data.id(), context, nextState.get(), machine);
+        } else {
+            if (machine.hasOutgoingTransitions(data.currentState().value())) {
+                String errorMsg = buildTransitionError(data.currentState().value(), machine.getTransitions());
+                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.FAILED, errorMsg));
+                throw new StateMachineException(errorMsg);
+            } else {
+                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.COMPLETED, null));
+            }
+        }
+    }
+
+    /**
+     * 核心执行循环：查找状态 → 执行 Action → 路由到下一个状态
+     */
+    private void executeLoop(InstanceId instanceId, C context, String startState, StateMachine<C> machine) {
+        InstanceData current = requireInstance(instanceId);
+        String currentStateName = startState;
+        int maxIterations = machine.getStates().size() * (machine.getRetryPolicy().getMaxAttempts() + 1) + 1;
+
+        for (int iteration = 1; iteration <= maxIterations; iteration++) {
+            final InstanceData currentRef = current;
+            final String stateNameRef = currentStateName;
+            State<C> state = machine.findState(currentStateName)
                 .orElseThrow(() -> {
-                    InstanceData d = requireInstance(instanceId);
-                    instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, "State not found: " + stateName));
-                    return new StateMachineException.StateNotFoundException(stateName);
+                    instanceRepo.save(currentRef.withUpdatedState(StateName.of(stateNameRef), InstanceStatus.FAILED, "State not found: " + stateNameRef));
+                    return new StateMachineException.StateNotFoundException(stateNameRef);
                 });
 
-            String inputJson = serialize(context);
-            int attempt = getCurrentAttempt(instanceId, stateName);
+            current = executeAction(current, state, context, machine);
 
+            if (state.isSuspended()) {
+                current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.SUSPENDED, null));
+                return;
+            }
+
+            Optional<String> nextState = machine.findNextState(context, currentStateName);
+            if (nextState.isEmpty()) {
+                if (machine.hasOutgoingTransitions(currentStateName)) {
+                    String errorMsg = buildTransitionError(currentStateName, machine.getTransitions());
+                    snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
+                        SnapshotId.generate(), instanceId, StateName.of(currentStateName),
+                        serialize(context), errorMsg));
+                    current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.FAILED, errorMsg));
+                    throw new StateMachineException(errorMsg);
+                }
+                current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.COMPLETED, null));
+                return;
+            }
+
+            snapshotRepo.save(ExecutionSnapshot.createRoute(
+                SnapshotId.generate(), instanceId, StateName.of(currentStateName),
+                serialize(context), StateName.of(nextState.get())));
+            currentStateName = nextState.get();
+            current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.RUNNING, null));
+        }
+        throw new StateMachineException("Execution exceeded maximum iterations");
+    }
+
+    /**
+     * 执行单个状态的 Action，记录成功/失败快照，处理重试逻辑
+     * @return 更新后的 InstanceData（成功）或 null（挂起后不应继续）
+     */
+    private InstanceData executeAction(InstanceData current, State<C> state, C context,
+                                        StateMachine<C> machine) {
+        String stateName = state.getName();
+        String inputJson = serialize(context);
+        int maxAttempts = machine.getRetryPolicy().getMaxAttempts();
+
+        while (true) {
+            int attempt = getCurrentAttempt(stateName, current.id());
             try {
                 state.getAction().execute(context);
                 snapshotRepo.save(ExecutionSnapshot.createSuccess(
-                    SnapshotId.generate(), instanceId, StateName.of(stateName),
+                    SnapshotId.generate(), current.id(), StateName.of(stateName),
                     inputJson, serialize(context), attempt));
-                instanceRepo.save(requireInstance(instanceId)
-                    .withIncrementedRetry(0, null));
+                return instanceRepo.save(current.withIncrementedRetry(0, null));
             } catch (Exception e) {
-                log.error("[state-machine] 状态 '{}' 执行失败 (实例 {}, 第 {} 次尝试)", stateName, instanceId, attempt, e);
+                log.error("[state-machine] 状态 '{}' 执行失败 (实例 {}, 第 {} 次尝试)", stateName, current.id(), attempt, e);
                 snapshotRepo.save(ExecutionSnapshot.createFailed(
-                    SnapshotId.generate(), instanceId, StateName.of(stateName),
+                    SnapshotId.generate(), current.id(), StateName.of(stateName),
                     inputJson, e.getMessage(), attempt));
 
-                int retryCount = instanceRepo.findById(instanceId).map(InstanceData::retryCount).orElse(0);
-                if (retryCount < machine.getRetryPolicy().getMaxAttempts()) {
+                int retryCount = current.retryCount();
+                if (retryCount < maxAttempts) {
                     long delayMs = machine.getRetryPolicy().getDelayForAttempt(retryCount + 1);
-                    InstanceData d = requireInstance(instanceId);
-                    instanceRepo.save(d.withIncrementedRetry(retryCount + 1, Instant.now().plusMillis(delayMs)));
+                    current = instanceRepo.save(current.withIncrementedRetry(retryCount + 1, Instant.now().plusMillis(delayMs)));
                     try { Thread.sleep(delayMs); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new StateMachineException("Retry interrupted", ie);
@@ -225,66 +237,27 @@ public class InstanceExecutionService<C> {
                     continue;
                 }
 
-                log.error("[state-machine] 状态 '{}' 耗尽 {} 次重试 (实例 {})", stateName, retryCount + 1, instanceId);
-                InstanceData d = requireInstance(instanceId);
-                instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
+                log.error("[state-machine] 状态 '{}' 耗尽 {} 次重试 (实例 {})", stateName, retryCount + 1, current.id());
+                current = instanceRepo.save(current.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
                 throw new StateMachineException(
                     String.format("State '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
             }
-
-            if (state.isSuspended()) {
-                InstanceData d = requireInstance(instanceId);
-                instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.SUSPENDED, null));
-                return;
-            }
-
-            try {
-                Optional<String> nextState = machine.findNextState(context, stateName);
-                if (nextState.isEmpty()) {
-                    if (machine.hasOutgoingTransitions(stateName)) {
-                        String errorMsg = String.format("No matching transition from state '%s'. Available: %s",
-                            stateName, machine.getTransitions().stream()
-                                .filter(t -> t.getFrom().equals(stateName))
-                                .map(Transition::getTo)
-                                .collect(java.util.stream.Collectors.joining(", ")));
-                        snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
-                            SnapshotId.generate(), instanceId, StateName.of(stateName),
-                            serialize(context), errorMsg));
-                        InstanceData d = requireInstance(instanceId);
-                        instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, errorMsg));
-                        throw new StateMachineException(errorMsg);
-                    }
-                    InstanceData d = requireInstance(instanceId);
-                    instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.COMPLETED, null));
-                    return;
-                }
-                snapshotRepo.save(ExecutionSnapshot.createRoute(
-                    SnapshotId.generate(), instanceId, StateName.of(stateName),
-                    serialize(context), StateName.of(nextState.get())));
-                current[0] = nextState.get();
-                InstanceData d = requireInstance(instanceId);
-                instanceRepo.save(d.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
-            } catch (StateMachineException e) {
-                throw e;
-            } catch (Exception e) {
-                log.error("[state-machine] 状态转换从 '{}' 失败 (实例 {})", stateName, instanceId, e);
-                snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
-                    SnapshotId.generate(), instanceId, StateName.of(stateName),
-                    serialize(context), e.getMessage()));
-                InstanceData d = requireInstance(instanceId);
-                instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
-                throw new StateMachineException(
-                    String.format("Transition from '%s' failed: %s", stateName, e.getMessage()), e);
-            }
         }
-        throw new StateMachineException("Execution exceeded maximum iterations");
     }
 
-    private int getCurrentAttempt(InstanceId instanceId, String stateName) {
+    private int getCurrentAttempt(String stateName, InstanceId instanceId) {
         return snapshotRepo.findByInstanceId(instanceId).stream()
             .filter(s -> s.stateName().value().equals(stateName))
             .mapToInt(SnapshotData::attempt)
             .max().orElse(0) + 1;
+    }
+
+    private String buildTransitionError(String stateName, List<? extends Transition> transitions) {
+        String availableTargets = transitions.stream()
+            .filter(t -> t.getFrom().equals(stateName))
+            .map(Transition::getTo)
+            .collect(java.util.stream.Collectors.joining(", "));
+        return String.format("No matching transition from state '%s'. Available: %s", stateName, availableTargets);
     }
 
     private String serialize(Object obj) {
