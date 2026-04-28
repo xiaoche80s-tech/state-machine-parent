@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +80,51 @@ public class InstanceRepository {
 
     public List<InstanceRecord> findByMachineNameAndStatus(String machineName, String status, int offset, int limit) {
         return jdbcTemplate.query("SELECT * FROM state_machine_instances WHERE machine_name = ? AND status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?", rowMapper(), machineName, status, limit, offset);
+    }
+
+    /** 多条件动态过滤查询，支持 status / businessId / instanceId 组合 */
+    public List<InstanceRecord> findByMachineNameWithFilters(String machineName, String status,
+            String businessId, String instanceId, int offset, int limit) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM state_machine_instances WHERE machine_name = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(machineName);
+        if (status != null && !status.isEmpty()) {
+            sql.append(" AND status = ?");
+            params.add(status);
+        }
+        if (businessId != null && !businessId.isEmpty()) {
+            sql.append(" AND business_id = ?");
+            params.add(businessId);
+        }
+        if (instanceId != null && !instanceId.isEmpty()) {
+            sql.append(" AND id = ?");
+            params.add(instanceId);
+        }
+        sql.append(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+        params.add(limit);
+        params.add(offset);
+        return jdbcTemplate.query(sql.toString(), rowMapper(), params.toArray());
+    }
+
+    /** 多条件动态计数 */
+    public long countByMachineNameWithFilters(String machineName, String status,
+            String businessId, String instanceId) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM state_machine_instances WHERE machine_name = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(machineName);
+        if (status != null && !status.isEmpty()) {
+            sql.append(" AND status = ?");
+            params.add(status);
+        }
+        if (businessId != null && !businessId.isEmpty()) {
+            sql.append(" AND business_id = ?");
+            params.add(businessId);
+        }
+        if (instanceId != null && !instanceId.isEmpty()) {
+            sql.append(" AND id = ?");
+            params.add(instanceId);
+        }
+        return jdbcTemplate.queryForObject(sql.toString(), Long.class, params.toArray());
     }
 
     private RowMapper<InstanceRecord> rowMapper() {

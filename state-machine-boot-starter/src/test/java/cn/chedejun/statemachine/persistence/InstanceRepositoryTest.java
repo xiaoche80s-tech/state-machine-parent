@@ -79,4 +79,38 @@ class InstanceRepositoryTest extends BaseRepositoryTest {
         assertEquals("SUSPENDED", r.get().status());
         assertEquals("payment", r.get().currentState());
     }
+
+    @Test void findByMachineNameWithFilters_filtersByBusinessId() {
+        repository.create(new InstanceRepository.CreateInstanceParams("def-1", "order-process", "v1", "s1", "ORD-100"));
+        repository.create(new InstanceRepository.CreateInstanceParams("def-2", "order-process", "v1", "s1", "ORD-200"));
+        var results = repository.findByMachineNameWithFilters("order-process", null, "ORD-100", null, 0, 10);
+        assertEquals(1, results.size());
+        assertEquals("ORD-100", results.get(0).businessId());
+    }
+
+    @Test void findByMachineNameWithFilters_filtersByInstanceId() {
+        repository.create(new InstanceRepository.CreateInstanceParams("def-1", "order-process", "v1", "s1", "ORD-100"));
+        repository.create(new InstanceRepository.CreateInstanceParams("def-2", "order-process", "v1", "s1", "ORD-200"));
+        var all = repository.findByMachineName("order-process", 0, 10);
+        String id = all.get(0).id();
+        var results = repository.findByMachineNameWithFilters("order-process", null, null, id, 0, 10);
+        assertEquals(1, results.size());
+        assertEquals(id, results.get(0).id());
+    }
+
+    @Test void findByMachineNameWithFilters_filtersByStatusAndBusinessId() {
+        String id1 = repository.create(new InstanceRepository.CreateInstanceParams("def-1", "order-process", "v1", "s1", "ORD-100"));
+        repository.create(new InstanceRepository.CreateInstanceParams("def-2", "order-process", "v1", "s1", "ORD-200"));
+        repository.updateState(id1, "s2", "COMPLETED", null);
+        var results = repository.findByMachineNameWithFilters("order-process", "COMPLETED", "ORD-100", null, 0, 10);
+        assertEquals(1, results.size());
+    }
+
+    @Test void countByMachineNameWithFilters_countsCorrectly() {
+        repository.create(new InstanceRepository.CreateInstanceParams("def-1", "order-process", "v1", "s1", "ORD-100"));
+        repository.create(new InstanceRepository.CreateInstanceParams("def-2", "order-process", "v1", "s1", "ORD-100"));
+        repository.create(new InstanceRepository.CreateInstanceParams("def-3", "order-process", "v1", "s1", "ORD-200"));
+        assertEquals(3L, repository.countByMachineNameWithFilters("order-process", null, null, null));
+        assertEquals(2L, repository.countByMachineNameWithFilters("order-process", null, "ORD-100", null));
+    }
 }
