@@ -241,32 +241,35 @@
                             <button v-if="machineFilterInstanceId" class="filter-clear" @click="machineFilterInstanceId=''; machinePage=0; loadMachineInstances()">✕</button>
                         </div>
                     </div>
-                    <div class="instance-list">
-                        <div v-for="i in machineInstances" :key="i.id" class="instance-item" @click="openDrawer(i.id)">
-                            <div class="instance-left">
-                                <div class="instance-id">{{ i.id }}</div>
-                                <div class="instance-meta">
-                                    <span>{{ i.currentState }}</span>
-                                    <span class="dot-sep">&middot;</span>
-                                    <span v-if="i.businessId">ID: {{ i.businessId }}</span>
-                                    <span class="dot-sep">&middot;</span>
-                                    <span>重试 {{ i.retryCount }}</span>
-                                    <span v-if="i.errorMessage" class="dot-sep">&middot;</span>
-                                    <span v-if="i.errorMessage" class="instance-error">{{ i.errorMessage }}</span>
-                                </div>
-                            </div>
-                            <div class="instance-right">
-                                <span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span>
-                                <button v-if="i.status==='SUSPENDED'" @click.stop="openResumeModal(i.id, i.currentState)" class="btn btn-sm btn-resume" style="margin-left:6px">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    恢复
-                                </button>
-                                <span class="instance-time">{{ relativeTime(i.createdAt) }}</span>
-                            </div>
-                        </div>
-                        <div v-if="!machineInstances.length" class="empty-state-sm">
-                            <p>{{ machineFilterStatus ? '没有符合条件的实例' : '暂无实例' }}</p>
-                        </div>
+                    <div class="table-wrap">
+                        <table class="instance-table">
+                            <thead>
+                                <tr>
+                                    <th>实例 ID</th>
+                                    <th>状态机</th>
+                                    <th>业务 ID</th>
+                                    <th>重试</th>
+                                    <th>状态</th>
+                                    <th>错误信息</th>
+                                    <th>时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="i in machineInstances" :key="i.id" @click="openDrawer(i.id)" class="instance-row">
+                                    <td class="td-mono">{{ i.id }}</td>
+                                    <td>{{ i.machineName }}</td>
+                                    <td class="td-mono">{{ i.businessId || '-' }}</td>
+                                    <td>{{ i.retryCount }}</td>
+                                    <td><span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span></td>
+                                    <td v-if="i.errorMessage" class="td-error">{{ i.errorMessage }}</td>
+                                    <td v-else>—</td>
+                                    <td>{{ relativeTime(i.createdAt) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div v-if="!machineInstances.length" class="empty-state-sm">
+                        <p>{{ machineFilterStatus || machineFilterBusinessId || machineFilterInstanceId ? '没有符合条件的实例' : '暂无实例' }}</p>
                     </div>
                     <div class="pagination">
                         <button class="page-btn" :disabled="machinePage === 0" @click="machinePage = 0; loadMachineInstances()">首页</button>

@@ -1173,3 +1173,59 @@ button { font-family: var(--sans); }
     cursor: pointer;
     transition: all var(--transition);
 }
+
+/* ===== Instance Table ===== */
+.table-wrap {
+    overflow-x: auto;
+}
+
+.instance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.instance-table thead {
+    background: var(--gray-50);
+    position: sticky;
+    top: 0;
+}
+
+.instance-table th {
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-500);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--gray-200);
+    white-space: nowrap;
+}
+
+.instance-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--gray-100);
+    vertical-align: middle;
+}
+
+.instance-row {
+    cursor: pointer;
+    transition: background var(--transition);
+}
+.instance-row:hover {
+    background: var(--gray-50);
+}
+
+.td-mono {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+}
+
+.td-error {
+    color: var(--red);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
