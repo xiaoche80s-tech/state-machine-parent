@@ -77,7 +77,20 @@ public class StateMachineRegistry {
     @SuppressWarnings("unchecked")
     public <C> Optional<StateMachine<C>> getLatest(String name) {
         return machines.entrySet().stream().filter(e -> e.getKey().startsWith(name + ":"))
-            .max(Map.Entry.comparingByKey()).map(e -> (StateMachine<C>) e.getValue());
+            .max((a, b) -> Integer.compare(extractVersion(a.getKey()), extractVersion(b.getKey())))
+            .map(e -> (StateMachine<C>) e.getValue());
+    }
+
+    private int extractVersion(String key) {
+        String[] parts = key.split(":", 2);
+        if (parts.length < 2) return 0;
+        try {
+            String version = parts[1];
+            if (version.startsWith("v")) version = version.substring(1);
+            return Integer.parseInt(version);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     public Set<String> getMachineNames() {

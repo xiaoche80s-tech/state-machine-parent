@@ -71,7 +71,9 @@ public class InstanceExecutionService<C> {
 
         Optional<String> nextState = machine.findNextState(context, data.currentState().value());
         if (nextState.isPresent()) {
-            instanceRepo.tryMarkRunningFromSuspended(data.id());
+            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
+            if (updated == 0)
+                throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
             instanceRepo.save(data.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
             executeLoop(data.id(), context, nextState.get(), machine);
         } else {
@@ -190,7 +192,7 @@ public class InstanceExecutionService<C> {
             String stateName = current[0];
             State<C> state = machine.findState(stateName)
                 .orElseThrow(() -> {
-                    InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                    InstanceData d = requireInstance(instanceId);
                     instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, "State not found: " + stateName));
                     return new StateMachineException.StateNotFoundException(stateName);
                 });
@@ -203,7 +205,7 @@ public class InstanceExecutionService<C> {
                 snapshotRepo.save(ExecutionSnapshot.createSuccess(
                     SnapshotId.generate(), instanceId, StateName.of(stateName),
                     inputJson, serialize(context), attempt));
-                instanceRepo.save(instanceRepo.findById(instanceId).orElseThrow()
+                instanceRepo.save(requireInstance(instanceId)
                     .withIncrementedRetry(0, null));
             } catch (Exception e) {
                 log.error("[state-machine] State '{}' action failed (instance {}, attempt {})", stateName, instanceId, attempt, e);
@@ -214,7 +216,7 @@ public class InstanceExecutionService<C> {
                 int retryCount = instanceRepo.findById(instanceId).map(InstanceData::retryCount).orElse(0);
                 if (retryCount < machine.getRetryPolicy().getMaxAttempts()) {
                     long delayMs = machine.getRetryPolicy().getDelayForAttempt(retryCount + 1);
-                    InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                    InstanceData d = requireInstance(instanceId);
                     instanceRepo.save(d.withIncrementedRetry(retryCount + 1, Instant.now().plusMillis(delayMs)));
                     try { Thread.sleep(delayMs); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
@@ -248,11 +250,11 @@ public class InstanceExecutionService<C> {
                         snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
                             SnapshotId.generate(), instanceId, StateName.of(stateName),
                             serialize(context), errorMsg));
-                        InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                        InstanceData d = requireInstance(instanceId);
                         instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, errorMsg));
                         throw new StateMachineException(errorMsg);
                     }
-                    InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
+                    InstanceData d = requireInstance(instanceId);
                     instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.COMPLETED, null));
                     return;
                 }
@@ -297,6 +299,11 @@ public class InstanceExecutionService<C> {
         try { return (C) objectMapper.readValue(json, machine.getContextClass()); } catch (Exception e) {
             throw new StateMachineException(String.format("Failed to deserialize context: %s", e.getMessage()), e);
         }
+    }
+
+    private InstanceData requireInstance(InstanceId instanceId) {
+        return instanceRepo.findById(instanceId)
+            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
     }
 
     private DefinitionId resolveDefinitionId(StateMachine<C> machine) {
