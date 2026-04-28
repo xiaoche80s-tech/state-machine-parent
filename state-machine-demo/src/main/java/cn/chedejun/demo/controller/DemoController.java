@@ -7,11 +7,12 @@ import cn.chedejun.demo.dto.OutboundResumeRequest;
 import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.demo.statemachine.OutboundContext;
 import cn.chedejun.statemachine.core.ExecuteResult;
-import cn.chedejun.statemachine.core.StateMachine;
 import cn.chedejun.statemachine.core.StateMachineException;
-import cn.chedejun.statemachine.persistence.InstanceRepository;
-import cn.chedejun.statemachine.persistence.SnapshotRepository;
-import org.springframework.jdbc.core.JdbcTemplate;
+import cn.chedejun.statemachine.domain.repository.InstanceRepository;
+import cn.chedejun.statemachine.domain.repository.SnapshotRepository;
+import cn.chedejun.statemachine.domain.shared.InstanceId;
+import cn.chedejun.statemachine.domain.shared.MachineName;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,18 +26,19 @@ import java.util.*;
 public class DemoController {
     private static final Logger log = LoggerFactory.getLogger(DemoController.class);
 
-    private final StateMachine<OrderContext> orderMachine;
-    private final StateMachine<OutboundContext> outboundMachine;
+    private final StateMachineFacade<OrderContext> orderMachine;
+    private final StateMachineFacade<OutboundContext> outboundMachine;
     private final InstanceRepository instanceRepository;
     private final SnapshotRepository snapshotRepository;
 
-    public DemoController(StateMachine<OrderContext> orderMachine,
-                          StateMachine<OutboundContext> outboundMachine,
-                          JdbcTemplate jdbcTemplate) {
+    public DemoController(StateMachineFacade<OrderContext> orderMachine,
+                          StateMachineFacade<OutboundContext> outboundMachine,
+                          InstanceRepository instanceRepository,
+                          SnapshotRepository snapshotRepository) {
         this.orderMachine = orderMachine;
         this.outboundMachine = outboundMachine;
-        this.instanceRepository = new InstanceRepository(jdbcTemplate);
-        this.snapshotRepository = new SnapshotRepository(jdbcTemplate);
+        this.instanceRepository = instanceRepository;
+        this.snapshotRepository = snapshotRepository;
     }
 
     /**
@@ -94,7 +96,7 @@ public class DemoController {
         }
 
         try {
-            orderMachine.resumeByBusinessId("order-process", req.businessId(), req.expectedCurrentState(), ctx -> {
+            orderMachine.resumeByBusinessId(req.businessId(), req.expectedCurrentState(), ctx -> {
                 if (req.shippingAddress() != null && !req.shippingAddress().isBlank()) {
                     ctx.setShippingAddress(req.shippingAddress());
                 }
@@ -121,12 +123,12 @@ public class DemoController {
      */
     @GetMapping("/orders")
     public List<Map<String, Object>> listOrders(@RequestParam(defaultValue = "10") int limit) {
-        return instanceRepository.findByMachineName("order-process", 0, limit).stream()
+        return instanceRepository.findByMachineName(MachineName.of("order-process"), 0, limit).stream()
             .map(r -> Map.<String, Object>of(
-                "id", r.id(),
-                "businessId", r.businessId() != null ? r.businessId() : "",
-                "status", r.status(),
-                "currentState", r.currentState(),
+                "id", r.id().value(),
+                "businessId", r.businessId() != null ? r.businessId().value() : "",
+                "status", r.status().name(),
+                "currentState", r.currentState().value(),
                 "retryCount", r.retryCount(),
                 "errorMessage", r.errorMessage() != null ? r.errorMessage() : "",
                 "createdAt", r.createdAt().toString()
@@ -138,21 +140,21 @@ public class DemoController {
      */
     @GetMapping("/orders/{id}")
     public Map<String, Object> orderDetail(@PathVariable String id) {
-        var instance = instanceRepository.findById(id);
+        var instance = instanceRepository.findById(InstanceId.of(id));
         if (instance.isEmpty()) return Map.of("error", "Instance not found");
 
-        var snaps = snapshotRepository.findByInstanceId(id).stream()
+        var snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
             .map(s -> Map.<String, Object>of(
-                "stateName", s.stateName(),
-                "status", s.status(),
+                "stateName", s.stateName().value(),
+                "status", s.status().name(),
                 "attempt", s.attempt(),
                 "executedAt", s.executedAt().toString(),
                 "errorMessage", s.errorMessage() != null ? s.errorMessage() : ""
             )).toList();
 
         return Map.of(
-            "instance", Map.of("id", instance.get().id(), "status", instance.get().status(),
-                "businessId", instance.get().businessId() != null ? instance.get().businessId() : ""),
+            "instance", Map.of("id", instance.get().id().value(), "status", instance.get().status().name(),
+                "businessId", instance.get().businessId() != null ? instance.get().businessId().value() : ""),
             "snapshots", snaps
         );
     }
@@ -163,7 +165,7 @@ public class DemoController {
     @PostMapping("/orders/{id}/retry")
     public Map<String, String> retryOrder(@PathVariable String id) {
         orderMachine.retry(id);
-        var updated = instanceRepository.findById(id).orElse(null);
+        var updated = instanceRepository.findById(InstanceId.of(id)).orElse(null);
         return Map.of("message", "已重新执行，当前状态: " + (updated != null ? updated.status() : "unknown"));
     }
 
@@ -216,7 +218,7 @@ public class DemoController {
         }
 
         try {
-            outboundMachine.resumeByBusinessId("outbound-process", req.businessId(), req.expectedCurrentState(), ctx -> {
+            outboundMachine.resumeByBusinessId(req.businessId(), req.expectedCurrentState(), ctx -> {
                 if (req.carrierCode() != null && !req.carrierCode().isBlank()) {
                     ctx.setCarrierCode(req.carrierCode());
                 }
@@ -243,12 +245,12 @@ public class DemoController {
      */
     @GetMapping("/outbounds")
     public List<Map<String, Object>> listOutbounds(@RequestParam(defaultValue = "10") int limit) {
-        return instanceRepository.findByMachineName("outbound-process", 0, limit).stream()
+        return instanceRepository.findByMachineName(MachineName.of("outbound-process"), 0, limit).stream()
             .map(r -> Map.<String, Object>of(
-                "id", r.id(),
-                "businessId", r.businessId() != null ? r.businessId() : "",
-                "status", r.status(),
-                "currentState", r.currentState(),
+                "id", r.id().value(),
+                "businessId", r.businessId() != null ? r.businessId().value() : "",
+                "status", r.status().name(),
+                "currentState", r.currentState().value(),
                 "retryCount", r.retryCount(),
                 "errorMessage", r.errorMessage() != null ? r.errorMessage() : "",
                 "createdAt", r.createdAt().toString()
@@ -260,21 +262,21 @@ public class DemoController {
      */
     @GetMapping("/outbounds/{id}")
     public Map<String, Object> outboundDetail(@PathVariable String id) {
-        var instance = instanceRepository.findById(id);
+        var instance = instanceRepository.findById(InstanceId.of(id));
         if (instance.isEmpty()) return Map.of("error", "Instance not found");
 
-        var snaps = snapshotRepository.findByInstanceId(id).stream()
+        var snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
             .map(s -> Map.<String, Object>of(
-                "stateName", s.stateName(),
-                "status", s.status(),
+                "stateName", s.stateName().value(),
+                "status", s.status().name(),
                 "attempt", s.attempt(),
                 "executedAt", s.executedAt().toString(),
                 "errorMessage", s.errorMessage() != null ? s.errorMessage() : ""
             )).toList();
 
         return Map.of(
-            "instance", Map.of("id", instance.get().id(), "status", instance.get().status(),
-                "businessId", instance.get().businessId() != null ? instance.get().businessId() : ""),
+            "instance", Map.of("id", instance.get().id().value(), "status", instance.get().status().name(),
+                "businessId", instance.get().businessId() != null ? instance.get().businessId().value() : ""),
             "snapshots", snaps
         );
     }
@@ -285,7 +287,7 @@ public class DemoController {
     @PostMapping("/outbounds/{id}/retry")
     public Map<String, String> retryOutbound(@PathVariable String id) {
         outboundMachine.retry(id);
-        var updated = instanceRepository.findById(id).orElse(null);
+        var updated = instanceRepository.findById(InstanceId.of(id)).orElse(null);
         return Map.of("message", "已重新执行，当前状态: " + (updated != null ? updated.status() : "unknown"));
     }
 

@@ -1,8 +1,7 @@
 package cn.chedejun.demo;
 
-import cn.chedejun.demo.config.OrderConfig;
 import cn.chedejun.demo.statemachine.OrderContext;
-import cn.chedejun.statemachine.core.StateMachine;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ConditionFailureDemoTest {
 
     @Autowired
-    private StateMachine<OrderContext> orderMachine;
+    private StateMachineFacade<OrderContext> orderMachine;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

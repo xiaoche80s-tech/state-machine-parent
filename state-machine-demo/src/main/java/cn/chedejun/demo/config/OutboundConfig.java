@@ -1,9 +1,12 @@
 package cn.chedejun.demo.config;
 
 import cn.chedejun.demo.statemachine.OutboundContext;
+import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.core.RetryPolicy;
-import cn.chedejun.statemachine.core.StateMachine;
 import cn.chedejun.statemachine.core.StateMachineBuilder;
+import cn.chedejun.statemachine.core.StateMachineRegistry;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -21,8 +24,9 @@ import java.util.concurrent.TimeUnit;
 public class OutboundConfig {
 
     @Bean
-    public StateMachine<OutboundContext> outboundMachine() {
-        return StateMachineBuilder.<OutboundContext>builder("outbound-process")
+    public StateMachineFacade<OutboundContext> outboundMachine(InstanceExecutionService<OutboundContext> executionService,
+                                                                StateMachineRegistry registry) {
+        StateMachine<OutboundContext> machine = StateMachineBuilder.<OutboundContext>builder("outbound-process")
             .contextClass(OutboundContext.class)
             .state("create", this::createOutbound)
             .state("pick", this::pickGoods)
@@ -35,21 +39,15 @@ public class OutboundConfig {
             .state("re-pick", this::rePickGoods)
             .state("return-inbound", this::returnInbound)
 
-            // 正常流程
             .transition("create", "pick", ctx -> true)
             .transition("pick", "check", ctx -> ctx.isPicked())
-            // 拣货异常 -> 异常处理
             .transition("pick", "handle-exception", ctx -> !ctx.isPicked())
             .transition("check", "pack", ctx -> ctx.isPacked())
-            // 复核不通过 -> 重新拣货
             .transition("check", "re-pick", ctx -> !ctx.isPacked())
             .transition("pack", "wait-ship-confirm", ctx -> true)
-            // 挂起点：等待发货确认 -> 发货
             .transition("wait-ship-confirm", "ship", ctx -> true)
             .transition("ship", "complete", ctx -> ctx.isShipped())
-            // 发货失败 -> 退货入库
             .transition("ship", "return-inbound", ctx -> !ctx.isShipped())
-            // 异常处理/重新拣货/退货入库 -> 完成（终止）
             .transition("handle-exception", "complete", ctx -> true)
             .transition("re-pick", "complete", ctx -> true)
             .transition("return-inbound", "complete", ctx -> true)
@@ -60,6 +58,8 @@ public class OutboundConfig {
                 .maxDelay(10, TimeUnit.SECONDS)
                 .build())
             .build();
+        registry.register(machine);
+        return new StateMachineFacade<>(machine, executionService);
     }
 
     private void createOutbound(OutboundContext ctx) {

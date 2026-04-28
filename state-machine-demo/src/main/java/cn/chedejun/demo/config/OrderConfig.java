@@ -1,10 +1,13 @@
 package cn.chedejun.demo.config;
 
 import cn.chedejun.demo.statemachine.OrderContext;
+import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.core.RetryPolicy;
-import cn.chedejun.statemachine.core.StateMachine;
 import cn.chedejun.statemachine.core.StateMachineBuilder;
 import cn.chedejun.statemachine.core.StateMachineException;
+import cn.chedejun.statemachine.core.StateMachineRegistry;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -19,36 +22,31 @@ public class OrderConfig {
     private final AtomicInteger idGen = new AtomicInteger(1);
 
     @Bean
-    public StateMachine<OrderContext> orderMachine() {
-        return StateMachineBuilder.<OrderContext>builder("order-process")
+    public StateMachineFacade<OrderContext> orderMachine(InstanceExecutionService<OrderContext> executionService,
+                                                          StateMachineRegistry registry) {
+        StateMachine<OrderContext> machine = StateMachineBuilder.<OrderContext>builder("order-process")
             .contextClass(OrderContext.class)
             .state("check-inventory", this::checkInventory)
             .state("process-payment", this::processPayment)
-            // 挂起点：等待发货确认（需人工审核或外部系统确认）
             .suspendState("await-ship-confirm", this::awaitShipConfirm)
             .state("ship-order", this::shipOrder)
             .state("send-notification", this::sendNotification)
             .state("notify-shortage", this::notifyShortage)
             .state("order-failed", this::orderFailed)
-            // 库存充足 -> 支付
             .transition("check-inventory", "process-payment", ctx -> ctx.getStock() > 0)
-            // 库存不足 -> 通知缺货
             .transition("check-inventory", "notify-shortage", ctx -> ctx.getStock() <= 0)
-            // 支付成功 -> 等待发货确认（50%机率路由失败，模拟网关限流/路由异常）
             .transition("process-payment", "await-ship-confirm", ctx -> ctx.isPaymentSuccess() && !ctx.isRouteFailed() && Math.random() >= 0.5)
-            // 支付失败 -> 失败
             .transition("process-payment", "order-failed", ctx -> !ctx.isPaymentSuccess() || ctx.isRouteFailed())
-            // 发货确认 -> 发货
             .transition("await-ship-confirm", "ship-order", ctx -> true)
-            // 发货 -> 通知
             .transition("ship-order", "send-notification", ctx -> true)
-
             .retryPolicy(RetryPolicy.exponentialBackoff()
                 .maxAttempts(3)
                 .initialDelay(1, TimeUnit.SECONDS)
                 .maxDelay(10, TimeUnit.SECONDS)
                 .build())
             .build();
+        registry.register(machine);
+        return new StateMachineFacade<>(machine, executionService);
     }
 
     private void checkInventory(OrderContext ctx) {
