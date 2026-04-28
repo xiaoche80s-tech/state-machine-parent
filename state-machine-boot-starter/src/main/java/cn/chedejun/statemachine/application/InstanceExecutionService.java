@@ -240,12 +240,14 @@ public class InstanceExecutionService<C> {
                 Optional<String> nextState = machine.findNextState(context, stateName);
                 if (nextState.isEmpty()) {
                     if (machine.hasOutgoingTransitions(stateName)) {
-                        String availableTargets = machine.getTransitions().stream()
-                            .filter(t -> t.getFrom().equals(stateName))
-                            .map(Transition::getTo)
-                            .collect(java.util.stream.Collectors.joining(", "));
                         String errorMsg = String.format("No matching transition from state '%s'. Available: %s",
-                            stateName, availableTargets);
+                            stateName, machine.getTransitions().stream()
+                                .filter(t -> t.getFrom().equals(stateName))
+                                .map(Transition::getTo)
+                                .collect(java.util.stream.Collectors.joining(", ")));
+                        snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
+                            SnapshotId.generate(), instanceId, StateName.of(stateName),
+                            serialize(context), errorMsg));
                         InstanceData d = instanceRepo.findById(instanceId).orElseThrow();
                         instanceRepo.save(d.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, errorMsg));
                         throw new StateMachineException(errorMsg);
