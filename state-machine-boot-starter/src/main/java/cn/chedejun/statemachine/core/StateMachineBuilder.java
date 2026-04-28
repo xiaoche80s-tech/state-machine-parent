@@ -1,5 +1,6 @@
 package cn.chedejun.statemachine.core;
 
+import cn.chedejun.statemachine.domain.engine.StateMachine;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,7 +26,6 @@ public class StateMachineBuilder<C> {
     public static <C> StateMachineBuilder<C> builder(String name) { return new StateMachineBuilder<>(name); }
 
     public StateMachineBuilder<C> state(String name, Action<C> action) { states.add(new State<>(name, action)); return this; }
-
     public StateMachineBuilder<C> suspendState(String name, Action<C> action) { states.add(new State<>(name, action, true)); return this; }
 
     public StateMachineBuilder<C> transition(String from, String to) { return transition(from, to, ctx -> true); }
@@ -36,19 +36,16 @@ public class StateMachineBuilder<C> {
     public StateMachineBuilder<C> retryPolicy(RetryPolicy retryPolicy) { this.retryPolicy = retryPolicy; return this; }
     public StateMachineBuilder<C> contextClass(Class<C> contextClass) { this.contextClass = contextClass; return this; }
 
-    StateMachineBuilder<C> jdbcTemplate(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; return this; }
-    StateMachineBuilder<C> registry(StateMachineRegistry registry) { this.registry = registry; return this; }
+    public StateMachineBuilder<C> jdbcTemplate(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; return this; }
+    public StateMachineBuilder<C> registry(StateMachineRegistry registry) { this.registry = registry; return this; }
 
     public StateMachine<C> build() {
         String version = "v" + versionCounter.incrementAndGet();
         @SuppressWarnings("unchecked")
         Class<C> ctxClass = (Class<C>) (contextClass != null ? contextClass : Context.class);
-        StateMachine<C> machine = new StateMachine<>(name, version, states, transitions, retryPolicy, ctxClass);
-        if (jdbcTemplate != null) machine.setJdbcTemplate(jdbcTemplate);
-        if (registry != null) {
-            machine.setRegistry(registry);
-            registry.register(machine);
-        }
-        return machine;
+        return new StateMachine<>(name, version, states, transitions, retryPolicy, ctxClass);
     }
+
+    public JdbcTemplate getJdbcTemplate() { return jdbcTemplate; }
+    public StateMachineRegistry getRegistry() { return registry; }
 }

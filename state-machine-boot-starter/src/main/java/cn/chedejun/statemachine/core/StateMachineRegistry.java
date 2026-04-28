@@ -1,10 +1,15 @@
 package cn.chedejun.statemachine.core;
 
+import cn.chedejun.statemachine.domain.data.DefinitionData;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
+import cn.chedejun.statemachine.domain.shared.MachineName;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import cn.chedejun.statemachine.persistence.DefinitionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -52,13 +57,21 @@ public class StateMachineRegistry {
             retryPolicyJson = "{}";
         }
 
-        if (definitionRepository.findByNameAndVersion(name, version).isPresent()) {
-            definitionRepository.update(name, version, stateEntries, transitionEntries, retryPolicyJson);
+        MachineName mName = MachineName.of(name);
+        DefinitionData data = new DefinitionData(UUID.randomUUID().toString(), mName, version,
+            serializeJson(stateEntries), serializeJson(transitionEntries), retryPolicyJson, Instant.now());
+
+        if (definitionRepository.findByNameAndVersion(mName, version).isPresent()) {
+            definitionRepository.update(data);
         } else {
-            definitionRepository.save(name, version, stateEntries, transitionEntries, retryPolicyJson);
+            definitionRepository.save(data);
         }
         machines.put(machineKey(name, version), machine);
         log.info("[state-machine] Registered machine {}:{}", name, version);
+    }
+
+    private String serializeJson(Object obj) {
+        try { return objectMapper.writeValueAsString(obj); } catch (Exception e) { return "{}"; }
     }
 
     @SuppressWarnings("unchecked")
@@ -73,11 +86,11 @@ public class StateMachineRegistry {
         return names;
     }
 
-    public List<DefinitionRepository.DefinitionRecord> getVersions(String name) {
-        return definitionRepository.findAllByName(name);
+    public List<DefinitionData> getVersions(String name) {
+        return definitionRepository.findAllByName(MachineName.of(name));
     }
 
-    public List<DefinitionRepository.DefinitionRecord> getAllDefinitions() {
+    public List<DefinitionData> getAllDefinitions() {
         return definitionRepository.findAll();
     }
 

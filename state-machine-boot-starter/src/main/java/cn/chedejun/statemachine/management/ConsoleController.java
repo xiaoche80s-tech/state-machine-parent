@@ -1,7 +1,12 @@
 package cn.chedejun.statemachine.management;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.domain.shared.BusinessId;
+import cn.chedejun.statemachine.domain.shared.InstanceId;
+import cn.chedejun.statemachine.domain.shared.StateName;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.MachineDefinitionDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
@@ -26,12 +31,16 @@ public class ConsoleController {
     private final StateMachineRegistry registry;
     private final InstanceRepository instanceRepository;
     private final SnapshotRepository snapshotRepository;
+    private final InstanceExecutionService<Object> executionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ConsoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+    @SuppressWarnings("unchecked")
+    public ConsoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate,
+                              InstanceExecutionService<Object> executionService) {
         this.registry = registry;
         this.instanceRepository = new InstanceRepository(jdbcTemplate);
         this.snapshotRepository = new SnapshotRepository(jdbcTemplate);
+        this.executionService = executionService;
     }
 
     @GetMapping("/api/machines") @ResponseBody
@@ -56,9 +65,9 @@ public class ConsoleController {
                     objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
                 Map<String, Object> rp = objectMapper.readValue(r.retryPolicyJson(),
                     objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
-                return new MachineDefinitionDTO(r.id(), r.name(), r.version(), states, transitions, rp, r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), states, transitions, rp, r.registeredAt());
             } catch (Exception e) {
-                return new MachineDefinitionDTO(r.id(), r.name(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
             }
         }).toList();
     }
@@ -104,27 +113,27 @@ public class ConsoleController {
         if (expectedState == null || expectedState.isBlank()) {
             return Map.of("success", false, "error", "Missing expectedCurrentState");
         }
-        var machine = registry.getLatest(inst.get().machineName());
-        if (machine.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName());
+        var machineOpt = registry.getLatest(inst.get().machineName());
+        if (machineOpt.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName());
         try {
             String contextJson = params.get("contextJson");
             @SuppressWarnings("unchecked")
-            cn.chedejun.statemachine.core.StateMachine<Object> m =
-                (cn.chedejun.statemachine.core.StateMachine<Object>)
-                        machine.get();
+            StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
 
             if (contextJson != null && !contextJson.isBlank()) {
                 final String cj = contextJson;
-                m.resumeByInstanceId(id, expectedState, ctx -> {
-                    try {
-                        objectMapper.readerForUpdating(ctx).readValue(cj);
-                    } catch (Exception e) {
-                        log.error("[state-machine] Failed to parse contextJson for instance resume id={}", id, e);
-                        throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
-                    }
-                });
+                executionService.resumeByInstanceId(m, InstanceId.of(id),
+                    StateName.of(expectedState), ctx -> {
+                        try {
+                            objectMapper.readerForUpdating(ctx).readValue(cj);
+                        } catch (Exception e) {
+                            log.error("[state-machine] Failed to parse contextJson for instance resume id={}", id, e);
+                            throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
+                        }
+                    });
             } else {
-                m.resumeByInstanceId(id, expectedState, c -> {});
+                executionService.resumeByInstanceId(m, InstanceId.of(id),
+                    StateName.of(expectedState), c -> {});
             }
             var updated = instanceRepository.findById(id);
             return Map.of("success", true, "message", "已恢复执行", "currentState",
@@ -139,10 +148,12 @@ public class ConsoleController {
     public Map<String, String> retryInstance(@PathVariable String id) {
         var inst = instanceRepository.findById(id);
         if (inst.isEmpty()) return Map.of("error", "Instance not found");
-        var machine = registry.getLatest(inst.get().machineName());
-        if (machine.isEmpty()) return Map.of("error", "State machine not found: " + inst.get().machineName());
+        var machineOpt = registry.getLatest(inst.get().machineName());
+        if (machineOpt.isEmpty()) return Map.of("error", "State machine not found: " + inst.get().machineName());
         try {
-            machine.get().retry(id);
+            @SuppressWarnings("unchecked")
+            StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
+            executionService.retry(m, InstanceId.of(id));
             var updated = instanceRepository.findById(id);
             return Map.of("message", "Instance re-executed from state: " + updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
         } catch (Exception e) {

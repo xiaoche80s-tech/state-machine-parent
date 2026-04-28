@@ -1,9 +1,17 @@
 package cn.chedejun.statemachine.autoconfigure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import cn.chedejun.statemachine.core.StateMachine;
+import cn.chedejun.statemachine.application.InstanceExecutionService;
+import cn.chedejun.statemachine.core.StateMachineBuilder;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
-import cn.chedejun.statemachine.persistence.DefinitionRepository;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
+import cn.chedejun.statemachine.domain.repository.InstanceRepository;
+import cn.chedejun.statemachine.domain.repository.SnapshotRepository;
+import cn.chedejun.statemachine.infrastructure.persistence.JdbcDefinitionRepository;
+import cn.chedejun.statemachine.infrastructure.persistence.JdbcInstanceRepository;
+import cn.chedejun.statemachine.infrastructure.persistence.JdbcSnapshotRepository;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import cn.chedejun.statemachine.persistence.DdlInitializer;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
@@ -20,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
+import java.util.List;
 
 @AutoConfiguration
 @AutoConfigureAfter(DataSourceAutoConfiguration.class)
@@ -34,8 +43,18 @@ public class StateMachineAutoConfiguration {
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
+    public InstanceRepository instanceRepository(JdbcTemplate jdbcTemplate) {
+        return new JdbcInstanceRepository(jdbcTemplate);
+    }
+
+    @Bean @ConditionalOnBean(DataSource.class)
+    public SnapshotRepository snapshotRepository(JdbcTemplate jdbcTemplate) {
+        return new JdbcSnapshotRepository(jdbcTemplate);
+    }
+
+    @Bean @ConditionalOnBean(DataSource.class)
     public DefinitionRepository definitionRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
-        return new DefinitionRepository(jdbcTemplate, objectMapper);
+        return new JdbcDefinitionRepository(jdbcTemplate, objectMapper);
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
@@ -44,15 +63,41 @@ public class StateMachineAutoConfiguration {
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
-    public BeanPostProcessor stateMachineRegistryPostProcessor(StateMachineRegistry registry, JdbcTemplate jdbcTemplate, DdlInitializer ddlInitializer) {
+    public InstanceExecutionService instanceExecutionService(InstanceRepository instanceRepo,
+                                                              SnapshotRepository snapshotRepo,
+                                                              DefinitionRepository definitionRepo,
+                                                              ObjectMapper objectMapper) {
+        return new InstanceExecutionService(instanceRepo, snapshotRepo, definitionRepo, objectMapper);
+    }
+
+    @Bean @ConditionalOnBean(DataSource.class)
+    public BeanPostProcessor stateMachineRegistryPostProcessor(StateMachineRegistry registry,
+                                                                 InstanceExecutionService executionService,
+                                                                 JdbcTemplate jdbcTemplate) {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-                if (bean instanceof StateMachine<?> machine) {
-                    machine.setJdbcTemplate(jdbcTemplate);
-                    machine.setRegistry(registry);
+                if (bean instanceof StateMachineBuilder<?> builder) {
+                    builder.jdbcTemplate(jdbcTemplate);
+                    builder.registry(registry);
+                    return bean;
+                }
+                if (bean instanceof StateMachineFacade<?> facade) {
+                    log.info("[state-machine] Auto-configured facade: {}", beanName);
+                    return bean;
+                }
+                return bean;
+            }
+        };
+    }
+
+    @Bean
+    public org.springframework.beans.factory.config.BeanPostProcessor stateMachineBeanRegistrar(StateMachineRegistry registry) {
+        return new org.springframework.beans.factory.config.BeanPostProcessor() {
+            @Override
+            public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+                if (bean instanceof cn.chedejun.statemachine.domain.engine.StateMachine<?> machine) {
                     registry.register(machine);
-                    log.info("[state-machine] Auto-configured state machine bean: {}", beanName);
                 }
                 return bean;
             }
@@ -77,9 +122,9 @@ public class StateMachineAutoConfiguration {
     @ConditionalOnProperty(prefix = "state-machine.console", name = "enabled", havingValue = "true", matchIfMissing = true)
     static class ConsoleConfiguration {
         @Bean
-        public cn.chedejun.statemachine.management.ConsoleController consoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+        public cn.chedejun.statemachine.management.ConsoleController consoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate, InstanceExecutionService<Object> executionService) {
             log.info("[state-machine] Console enabled at /statemachine");
-            return new cn.chedejun.statemachine.management.ConsoleController(registry, jdbcTemplate);
+            return new cn.chedejun.statemachine.management.ConsoleController(registry, jdbcTemplate, executionService);
         }
     }
 }

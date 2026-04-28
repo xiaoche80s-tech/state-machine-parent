@@ -1,15 +1,16 @@
 package cn.chedejun.statemachine.integration;
 
+import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.autoconfigure.StateMachineAutoConfiguration;
 import cn.chedejun.statemachine.autoconfigure.StateMachineProperties;
 import cn.chedejun.statemachine.core.*;
+import cn.chedejun.statemachine.domain.engine.StateMachine;
 import cn.chedejun.statemachine.management.ConsoleController;
 import cn.chedejun.statemachine.management.StateMachineEndpoint;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
-import cn.chedejun.statemachine.persistence.DefinitionRepository;
-import cn.chedejun.statemachine.persistence.InstanceRepository;
-import cn.chedejun.statemachine.persistence.SnapshotRepository;
+import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
+import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.Assumptions;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,7 +63,6 @@ class StateMachineIntegrationTest {
 
         @Bean
         public DdlExecutor ddlExecutor(DataSource dataSource) {
-            // Clean stale definitions from previous test runs
             var template = new JdbcTemplate(dataSource);
             template.execute("DELETE FROM state_machine_snapshots");
             template.execute("DELETE FROM state_machine_instances");
@@ -71,8 +71,8 @@ class StateMachineIntegrationTest {
         }
 
         @Bean
-        public StateMachine<TestContext> testMachine() {
-            return StateMachineBuilder.<TestContext>builder("test-machine")
+        public StateMachineFacade<TestContext> testMachine(InstanceExecutionService<TestContext> executionService) {
+            StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("test-machine")
                 .contextClass(TestContext.class)
                 .state("validate", ctx -> ctx.setValidated(true))
                 .state("process", ctx -> ctx.setProcessed(true))
@@ -80,20 +80,22 @@ class StateMachineIntegrationTest {
                 .transition("validate", "process", TestContext::isValidated)
                 .transition("process", "complete", TestContext::isProcessed)
                 .build();
+            return new StateMachineFacade<>(machine, executionService);
         }
 
         @Bean
-        public StateMachine<TestContext> failingMachine() {
-            return StateMachineBuilder.<TestContext>builder("failing-machine")
+        public StateMachineFacade<TestContext> failingMachine(InstanceExecutionService<TestContext> executionService) {
+            StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("failing-machine")
                 .contextClass(TestContext.class)
                 .state("will-fail", ctx -> { throw new RuntimeException("intentional failure"); })
                 .retryPolicy(RetryPolicy.exponentialBackoff().maxAttempts(2).initialDelay(100, TimeUnit.MILLISECONDS).build())
                 .build();
+            return new StateMachineFacade<>(machine, executionService);
         }
 
         @Bean
-        public StateMachine<TestContext> suspendMachine() {
-            return StateMachineBuilder.<TestContext>builder("suspend-machine")
+        public StateMachineFacade<TestContext> suspendMachine(InstanceExecutionService<TestContext> executionService) {
+            StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("suspend-machine")
                 .contextClass(TestContext.class)
                 .state("validate", ctx -> ctx.setValidated(true))
                 .suspendState("wait-approval", ctx -> ctx.setProcessed(true))
@@ -101,6 +103,7 @@ class StateMachineIntegrationTest {
                 .transition("validate", "wait-approval", TestContext::isValidated)
                 .transition("wait-approval", "complete", TestContext::isProcessed)
                 .build();
+            return new StateMachineFacade<>(machine, executionService);
         }
     }
 
@@ -117,9 +120,9 @@ class StateMachineIntegrationTest {
         public void setCompleted(boolean v) { this.completed = v; }
     }
 
-    @Autowired private StateMachine<TestContext> testMachine;
-    @Autowired private StateMachine<TestContext> failingMachine;
-    @Autowired private StateMachine<TestContext> suspendMachine;
+    @Autowired private StateMachineFacade<TestContext> testMachine;
+    @Autowired private StateMachineFacade<TestContext> failingMachine;
+    @Autowired private StateMachineFacade<TestContext> suspendMachine;
     @Autowired private StateMachineRegistry registry;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private DefinitionRepository definitionRepository;
@@ -127,11 +130,11 @@ class StateMachineIntegrationTest {
     @Autowired(required = false) private StateMachineEndpoint endpoint;
     @Autowired(required = false) private ConsoleController consoleController;
 
-    private InstanceRepository instanceRepository() { return new InstanceRepository(jdbcTemplate); }
-    private SnapshotRepository snapshotRepository() { return new SnapshotRepository(jdbcTemplate); }
+    private cn.chedejun.statemachine.persistence.InstanceRepository instanceRepository() { return new cn.chedejun.statemachine.persistence.InstanceRepository(jdbcTemplate); }
+    private cn.chedejun.statemachine.persistence.SnapshotRepository snapshotRepository() { return new cn.chedejun.statemachine.persistence.SnapshotRepository(jdbcTemplate); }
 
     private String resolveDefinitionId(String machineName) {
-        var definitions = definitionRepository.findAllByName(machineName);
+        var definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of(machineName));
         if (definitions.isEmpty()) throw new StateMachineException("Definition not found: " + machineName);
         return definitions.get(0).id();
     }
@@ -140,7 +143,6 @@ class StateMachineIntegrationTest {
     void cleanTables() {
         jdbcTemplate.execute("DELETE FROM state_machine_snapshots");
         jdbcTemplate.execute("DELETE FROM state_machine_instances");
-        // Don't delete definitions - they are registered once at context startup
     }
 
     // ===== 自动配置验证 =====
@@ -152,7 +154,6 @@ class StateMachineIntegrationTest {
         assertNotNull(registry);
         assertNotNull(definitionRepository);
         assertNotNull(properties);
-        // Management beans are optional (depend on actuator/web being on classpath)
         if (endpoint != null) log.info("StateMachineEndpoint is available");
         if (consoleController != null) log.info("ConsoleController is available");
     }
@@ -209,10 +210,10 @@ class StateMachineIntegrationTest {
     @Test
     @Order(11)
     void execute_definitionSavedToDatabase() {
-        var definitions = definitionRepository.findAllByName("test-machine");
+        var definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of("test-machine"));
         assertFalse(definitions.isEmpty());
         var def = definitions.get(0);
-        assertEquals("test-machine", def.name());
+        assertEquals("test-machine", def.name().value());
         assertNotNull(def.statesJson());
         assertNotNull(def.transitionsJson());
     }
@@ -220,7 +221,7 @@ class StateMachineIntegrationTest {
     @Test
     @Order(12)
     void execute_multipleVersions_createsNewVersion() {
-        long count = definitionRepository.findAllByName("test-machine").size();
+        long count = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of("test-machine")).size();
         assertTrue(count >= 1);
     }
 
@@ -320,7 +321,6 @@ class StateMachineIntegrationTest {
     @Order(34)
     void consoleApi_retryInstance() {
         Assumptions.assumeTrue(consoleController != null);
-        // Create a failing instance
         TestContext ctx = new TestContext();
         try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
         var instances = instanceRepository().findByMachineName("failing-machine", 0, 10);
@@ -329,7 +329,6 @@ class StateMachineIntegrationTest {
 
         var result = consoleController.retryInstance(instanceId);
         assertTrue(result.get("message").contains("Re-execution"));
-        // Verify it ran again and failed again (failing-machine always fails)
         var updated = instanceRepository().findById(instanceId);
         assertEquals("FAILED", updated.get().status());
     }
@@ -367,13 +366,11 @@ class StateMachineIntegrationTest {
         assertEquals("SUSPENDED", result.status());
         assertEquals("wait-approval", result.currentState());
         assertTrue(ctx.isValidated());
-        assertTrue(ctx.isProcessed());    // 挂起点的 Action 已执行
-        assertFalse(ctx.isCompleted());   // complete 未执行
+        assertTrue(ctx.isProcessed());
+        assertFalse(ctx.isCompleted());
 
-        // 恢复执行
-        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-001", "wait-approval", c -> {});
+        suspendMachine.resumeByBusinessId("test-biz-001", "wait-approval", c -> {});
 
-        // 重新查询实例状态
         var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-001");
         assertTrue(instance.isPresent());
         assertEquals("COMPLETED", instance.get().status());
@@ -387,10 +384,8 @@ class StateMachineIntegrationTest {
         ExecuteResult result = suspendMachine.execute(ctx, "biz-resume-non-suspended");
         assertEquals("SUSPENDED", result.status());
 
-        // 先恢复一次
         suspendMachine.resumeByInstanceId(result.instanceId(), "wait-approval", c -> {});
 
-        // 再次恢复应该失败（已经不是 SUSPENDED 状态）
         assertThrows(StateMachineException.class, () ->
             suspendMachine.resumeByInstanceId(result.instanceId(), "wait-approval", c -> {}));
     }
@@ -404,12 +399,10 @@ class StateMachineIntegrationTest {
         assertEquals("SUSPENDED", result.status());
         assertFalse(ctx.isCompleted());
 
-        // 恢复时通过 contextMerger 设置 processed = true，使状态能继续流转
-        suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-002", "wait-approval", c -> {
+        suspendMachine.resumeByBusinessId("test-biz-002", "wait-approval", c -> {
             c.setProcessed(true);
         });
 
-        // 验证状态机已完成，说明 contextMerger 修改生效了
         var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-002");
         assertTrue(instance.isPresent());
         assertEquals("COMPLETED", instance.get().status());
@@ -419,7 +412,7 @@ class StateMachineIntegrationTest {
     @Order(53)
     void resumeByBusinessId_notFound_throwsException() {
         assertThrows(StateMachineException.class, () ->
-            suspendMachine.resumeByBusinessId("suspend-machine", "non-existent-biz", "any", c -> {}));
+            suspendMachine.resumeByBusinessId("non-existent-biz", "any", c -> {}));
     }
 
     @Test
@@ -430,11 +423,9 @@ class StateMachineIntegrationTest {
         assertEquals("SUSPENDED", result.status());
         assertEquals("wait-approval", result.currentState());
 
-        // 传错误的 expectedCurrentState，应该拒绝
         assertThrows(StateMachineException.class, () ->
-            suspendMachine.resumeByBusinessId("suspend-machine", "test-biz-003", "wrong-state", c -> {}));
+            suspendMachine.resumeByBusinessId("test-biz-003", "wrong-state", c -> {}));
 
-        // 状态应该不变
         var instance = instanceRepository().findByBusinessId("suspend-machine", "test-biz-003");
         assertTrue(instance.isPresent());
         assertEquals("SUSPENDED", instance.get().status());

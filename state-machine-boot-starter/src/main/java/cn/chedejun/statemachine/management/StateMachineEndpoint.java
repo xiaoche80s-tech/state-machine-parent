@@ -55,10 +55,10 @@ public class StateMachineEndpoint {
                     objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
                 Map<String, Object> rp = objectMapper.readValue(r.retryPolicyJson(),
                     objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
-                return new MachineDefinitionDTO(r.id(), r.name(), r.version(), states, transitions, rp, r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), states, transitions, rp, r.registeredAt());
             } catch (Exception e) {
                 log.warn("[state-machine] Failed to parse definition for machine {}", name, e);
-                return new MachineDefinitionDTO(r.id(), r.name(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
             }
         }).toList();
     }

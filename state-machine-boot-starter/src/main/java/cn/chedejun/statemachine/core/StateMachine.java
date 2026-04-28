@@ -289,7 +289,7 @@ public class StateMachine<C> {
     private String resolveDefinitionId() {
         if (registry != null) return registry.getVersions(name).stream()
             .filter(v -> v.version().equals(version)).findFirst()
-            .map(DefinitionRepository.DefinitionRecord::id).orElse("unknown");
+            .map(v -> v.id()).orElse("unknown");
         return "unknown";
     }
 
