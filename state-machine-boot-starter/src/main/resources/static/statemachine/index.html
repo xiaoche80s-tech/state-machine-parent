@@ -260,7 +260,12 @@
                                     <td>{{ i.machineName }}</td>
                                     <td class="td-mono">{{ i.businessId || '-' }}</td>
                                     <td>{{ i.retryCount }}</td>
-                                    <td><span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span></td>
+                                    <td><span class="status-pill" :class="'status-' + i.status">{{ statusLabel(i.status) }}</span>
+                                        <button v-if="i.status==='SUSPENDED'" @click.stop="openResumeModal(i.id, i.currentState)" class="btn btn-sm btn-resume" style="margin-left:6px">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                            恢复
+                                        </button>
+                                    </td>
                                     <td v-if="i.errorMessage" class="td-error">{{ i.errorMessage }}</td>
                                     <td v-else>—</td>
                                     <td>{{ relativeTime(i.createdAt) }}</td>
