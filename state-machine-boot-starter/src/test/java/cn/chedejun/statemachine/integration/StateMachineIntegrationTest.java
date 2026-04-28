@@ -71,7 +71,7 @@ class StateMachineIntegrationTest {
         }
 
         @Bean
-        public StateMachineFacade<TestContext> testMachine(InstanceExecutionService<TestContext> executionService) {
+        public StateMachineFacade<TestContext> testMachine(InstanceExecutionService<TestContext> executionService, StateMachineRegistry registry) {
             StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("test-machine")
                 .contextClass(TestContext.class)
                 .state("validate", ctx -> ctx.setValidated(true))
@@ -80,21 +80,25 @@ class StateMachineIntegrationTest {
                 .transition("validate", "process", TestContext::isValidated)
                 .transition("process", "complete", TestContext::isProcessed)
                 .build();
+            registry.register(machine);
             return new StateMachineFacade<>(machine, executionService);
         }
 
         @Bean
-        public StateMachineFacade<TestContext> failingMachine(InstanceExecutionService<TestContext> executionService) {
+        public StateMachineFacade<TestContext> failingMachine(InstanceExecutionService<TestContext> executionService, StateMachineRegistry registry) {
             StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("failing-machine")
                 .contextClass(TestContext.class)
                 .state("will-fail", ctx -> { throw new RuntimeException("intentional failure"); })
+                .state("done", ctx -> {})
+                .transition("will-fail", "done", ctx -> true)
                 .retryPolicy(RetryPolicy.exponentialBackoff().maxAttempts(2).initialDelay(100, TimeUnit.MILLISECONDS).build())
                 .build();
+            registry.register(machine);
             return new StateMachineFacade<>(machine, executionService);
         }
 
         @Bean
-        public StateMachineFacade<TestContext> suspendMachine(InstanceExecutionService<TestContext> executionService) {
+        public StateMachineFacade<TestContext> suspendMachine(InstanceExecutionService<TestContext> executionService, StateMachineRegistry registry) {
             StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("suspend-machine")
                 .contextClass(TestContext.class)
                 .state("validate", ctx -> ctx.setValidated(true))
@@ -103,6 +107,7 @@ class StateMachineIntegrationTest {
                 .transition("validate", "wait-approval", TestContext::isValidated)
                 .transition("wait-approval", "complete", TestContext::isProcessed)
                 .build();
+            registry.register(machine);
             return new StateMachineFacade<>(machine, executionService);
         }
     }
