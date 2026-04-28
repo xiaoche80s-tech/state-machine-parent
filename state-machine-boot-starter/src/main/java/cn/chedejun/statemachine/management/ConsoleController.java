@@ -63,13 +63,16 @@ public class ConsoleController {
     @GetMapping("/api/machines/{name}/instances") @ResponseBody
     public Map<String, Object> getInstances(@PathVariable String name,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String businessId,
+            @RequestParam(required = false) String instanceId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        var records = status != null
-            ? instanceRepository.findByMachineNameAndStatus(name, status, page * size, size)
+        boolean hasFilters = status != null || businessId != null || instanceId != null;
+        var records = hasFilters
+            ? instanceRepository.findByMachineNameWithFilters(name, status, businessId, instanceId, page * size, size)
             : instanceRepository.findByMachineName(name, page * size, size);
-        long total = status != null
-            ? instanceRepository.countByMachineNameAndStatus(name, status)
+        long total = hasFilters
+            ? instanceRepository.countByMachineNameWithFilters(name, status, businessId, instanceId)
             : instanceRepository.countByMachineNameAndStatus(name, null);
         var dtos = records.stream().map(r -> new InstanceDTO(r.id(), r.machineName(), r.definitionVersion(),
             r.currentState(), r.status(), r.businessId(), r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
