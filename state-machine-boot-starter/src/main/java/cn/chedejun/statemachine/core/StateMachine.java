@@ -6,12 +6,16 @@ import cn.chedejun.statemachine.persistence.DefinitionRepository;
 import cn.chedejun.statemachine.persistence.InstanceRepository;
 import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
 
 public class StateMachine<C> {
+
+    private static final Logger log = LoggerFactory.getLogger(StateMachine.class);
 
     private final String name;
     private final String version;
@@ -85,7 +89,17 @@ public class StateMachine<C> {
             instanceRepository.setRetryCount(instance.id(), 0);
             executeLoop(instance.id(), context, nextState.get());
         } else {
-            instanceRepository.updateState(instance.id(), instance.currentState(), "COMPLETED", null);
+            // 恢复后发现无匹配过渡：区分终端状态和路由失败
+            if (hasOutgoingTransitions(instance.currentState())) {
+                String availableTargets = transitions.stream()
+                    .filter(t -> t.getFrom().equals(instance.currentState()))
+                    .map(Transition::getTo)
+                    .collect(java.util.stream.Collectors.joining(", "));
+                String errorMsg = String.format("No matching transition from state '%s'. Available transitions: %s", instance.currentState(), availableTargets);
+                instanceRepository.updateState(instance.id(), instance.currentState(), "FAILED", errorMsg);
+            } else {
+                instanceRepository.updateState(instance.id(), instance.currentState(), "COMPLETED", null);
+            }
         }
     }
 
@@ -122,6 +136,7 @@ public class StateMachine<C> {
         SnapshotRepository.SnapshotRecord failedSnapshot = lastFailed.get();
         C context = deserialize(failedSnapshot.inputJson() != null ? failedSnapshot.inputJson() : "{}");
 
+
         // 路由评估失败：从 currentState 重新尝试路由（不重执行 action）
         if ("ROUTE".equals(failedSnapshot.snapshotType())) {
             Optional<String> nextState = findNextState(context, instance.currentState());
@@ -131,7 +146,7 @@ public class StateMachine<C> {
             String targetState = nextState.get();
             findState(targetState)
                 .orElseThrow(() -> new StateMachineException.StateNotFoundException(targetState));
-
+            snapshotRepository.updateRouteStatus(failedSnapshot.id(),"SUCCESS",targetState,"");
             instanceRepository.updateState(instanceId, targetState, "RUNNING", null);
             instanceRepository.setRetryCount(instanceId, 0);
             executeLoop(instanceId, context, targetState);
@@ -142,6 +157,7 @@ public class StateMachine<C> {
         instanceRepository.updateState(instanceId, instance.currentState(), "RUNNING", null);
         instanceRepository.setRetryCount(instanceId, 0);
         executeLoop(instanceId, context, instance.currentState());
+        // 重试成功，删除旧的失败快照
     }
 
     // ===== 核心执行循环（execute 和 retry 共享） =====
@@ -169,6 +185,7 @@ public class StateMachine<C> {
                     snapshotRepository.save(instanceId, stateName, inputJson, serialize(context), "SUCCESS", null, attempt, "NODE");
                     instanceRepository.setRetryCount(instanceId, 0);
                 } catch (Exception e) {
+                    log.error("[state-machine] State '{}' action failed (instance {}, attempt {})", stateName, instanceId, attempt, e);
                     snapshotRepository.save(instanceId, stateName, inputJson, null, "FAILED", e.getMessage(), attempt, "NODE");
                     int retryCount = getRetryCount(instanceId);
                     if (retryCount < retryPolicy.getMaxAttempts()) {
@@ -180,6 +197,7 @@ public class StateMachine<C> {
                         }
                         continue;
                     }
+                    log.error("[state-machine] State '{}' exhausted {} retries (instance {})", stateName, retryCount + 1, instanceId);
                     instanceRepository.updateState(instanceId, stateName, "FAILED", e.getMessage());
                     throw new StateMachineException(
                         String.format("State '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
@@ -194,6 +212,18 @@ public class StateMachine<C> {
                 try {
                     Optional<String> nextState = findNextState(context, stateName);
                     if (nextState.isEmpty()) {
+                        // 区分"无出边（终端状态）"和"有出边但条件不匹配"
+                        if (hasOutgoingTransitions(stateName)) {
+                            // 有出边但无匹配条件 → 路由失败
+                            String availableTargets = transitions.stream()
+                                .filter(t -> t.getFrom().equals(stateName))
+                                .map(Transition::getTo)
+                                .collect(java.util.stream.Collectors.joining(", "));
+                            String errorMsg = String.format("No matching transition from state '%s'. Available transitions: %s", stateName, availableTargets);
+                            instanceRepository.updateState(instanceId, stateName, "FAILED", errorMsg);
+                            throw new StateMachineException(errorMsg);
+                        }
+                        // 无出边 → 正常完成（终端状态）
                         instanceRepository.updateState(instanceId, stateName, "COMPLETED", null);
                         return;
                     }
@@ -201,6 +231,7 @@ public class StateMachine<C> {
                     current[0] = nextState.get();
                     instanceRepository.updateState(instanceId, current[0], "RUNNING", null);
                 } catch (Exception e) {
+                    log.error("[state-machine] Transition from '{}' failed (instance {})", stateName, instanceId, e);
                     snapshotRepository.saveRouteFailed(instanceId, stateName, serialize(context), e.getMessage());
                     instanceRepository.updateState(instanceId, stateName, "FAILED", e.getMessage());
                     throw new StateMachineException(
@@ -209,6 +240,7 @@ public class StateMachine<C> {
             }
             throw new StateMachineException("Execution exceeded maximum iterations");
         } catch (Exception e) {
+            log.error("[state-machine] Execution loop error for instance {}", instanceId, e);
             String status = instanceRepository.findById(instanceId)
                 .map(InstanceRepository.InstanceRecord::status).orElse(null);
             if (!"FAILED".equals(status)) {
@@ -231,13 +263,24 @@ public class StateMachine<C> {
         return Optional.empty();
     }
 
+    private boolean hasOutgoingTransitions(String fromState) {
+        for (Transition<C> t : transitions) {
+            if (t.getFrom().equals(fromState)) return true;
+        }
+        return false;
+    }
+
     private String serialize(Object obj) {
-        try { return objectMapper.writeValueAsString(obj); } catch (Exception e) { return "{}"; }
+        try { return objectMapper.writeValueAsString(obj); } catch (Exception e) {
+            log.warn("[state-machine] Failed to serialize object, returning empty JSON", e);
+            return "{}";
+        }
     }
 
     @SuppressWarnings("unchecked")
     private C deserialize(String json) {
         try { return (C) objectMapper.readValue(json, contextClass); } catch (Exception e) {
+            log.error("[state-machine] Failed to deserialize context, contextClass={}", contextClass.getName(), e);
             throw new StateMachineException(
                 String.format("Failed to deserialize context: %s. ContextClass: %s", e.getMessage(), contextClass.getName()), e);
         }

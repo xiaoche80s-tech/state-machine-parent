@@ -2,6 +2,8 @@ package cn.chedejun.statemachine.persistence;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -9,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 public class SnapshotRepository {
+    private static final Logger log = LoggerFactory.getLogger(SnapshotRepository.class);
     private final JdbcTemplate jdbcTemplate;
     public SnapshotRepository(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
 
@@ -60,7 +63,7 @@ public class SnapshotRepository {
                 ps.setString(i++, instanceId);
                 ps.setString(i++, fromState);
                 setJson(ps, i++, contextJson);
-                ps.setString(i++, null);
+                setJson(ps, i++, null);
                 ps.setString(i++, "FAILED");
                 ps.setString(i++, errorMessage);
                 ps.setInt(i++, 0);
@@ -86,6 +89,15 @@ public class SnapshotRepository {
             rs.getString("id"), rs.getString("instance_id"), rs.getString("state_name"),
             rs.getString("input"), rs.getString("output"), rs.getString("status"),
             rs.getString("error_message"), rs.getInt("attempt"), rs.getString("snapshot_type"), rs.getTimestamp("executed_at").toInstant());
+    }
+
+    public void updateRouteStatus(String id, String snapStatus, String targetState,String errorMessage) {
+        jdbcTemplate.update("UPDATE state_machine_snapshots set status=?,output=?,error_message=? where id=?",pss->{
+            pss.setString(1,snapStatus);
+            setJson(pss,2,"\"" + targetState + "\"");
+            pss.setString(3,errorMessage);
+            pss.setString(4,id);
+        });
     }
 
     public record SnapshotRecord(String id, String instanceId, String stateName,

@@ -11,10 +11,13 @@ import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
 import org.springframework.boot.actuate.endpoint.annotation.Selector;
 import org.springframework.boot.actuate.endpoint.annotation.WriteOperation;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 
 @Endpoint(id = "state-machines")
 public class StateMachineEndpoint {
+    private static final Logger log = LoggerFactory.getLogger(StateMachineEndpoint.class);
     private final StateMachineRegistry registry;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private JdbcTemplate jdbcTemplate;
@@ -54,6 +57,7 @@ public class StateMachineEndpoint {
                     objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
                 return new MachineDefinitionDTO(r.id(), r.name(), r.version(), states, transitions, rp, r.registeredAt());
             } catch (Exception e) {
+                log.warn("[state-machine] Failed to parse definition for machine {}", name, e);
                 return new MachineDefinitionDTO(r.id(), r.name(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
             }
         }).toList();

@@ -2,6 +2,8 @@ package cn.chedejun.statemachine.persistence;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public class InstanceRepository {
+    private static final Logger log = LoggerFactory.getLogger(InstanceRepository.class);
     private final JdbcTemplate jdbcTemplate;
     public InstanceRepository(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
 
@@ -30,7 +33,7 @@ public class InstanceRepository {
 
     public Optional<InstanceRecord> findById(String id) {
         try { return Optional.ofNullable(jdbcTemplate.queryForObject("SELECT * FROM state_machine_instances WHERE id = ?", rowMapper(), id)); }
-        catch (Exception e) { return Optional.empty(); }
+        catch (Exception e) { log.warn("[state-machine] Failed to find instance by id={}", id, e); return Optional.empty(); }
     }
 
     public Optional<InstanceRecord> findByBusinessId(String machineName, String businessId) {
@@ -38,7 +41,7 @@ public class InstanceRepository {
             return Optional.ofNullable(jdbcTemplate.queryForObject(
                 "SELECT * FROM state_machine_instances WHERE machine_name = ? AND business_id = ? ORDER BY created_at DESC LIMIT 1",
                 rowMapper(), machineName, businessId));
-        } catch (Exception e) { return Optional.empty(); }
+        } catch (Exception e) { log.warn("[state-machine] Failed to find instance by businessId={} machineName={}", businessId, machineName, e); return Optional.empty(); }
     }
 
     /**

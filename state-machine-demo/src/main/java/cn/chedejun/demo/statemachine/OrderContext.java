@@ -13,6 +13,7 @@ public class OrderContext extends Context {
     private double amount;
     private boolean paymentSuccess;
     private String shippingAddress;
+    private boolean routeFailed;
 
     public List<String> getAbcList() {
         return abcList;
@@ -92,4 +93,6 @@ public class OrderContext extends Context {
     public void setPaymentSuccess(boolean paymentSuccess) { this.paymentSuccess = paymentSuccess; }
     public String getShippingAddress() { return shippingAddress; }
     public void setShippingAddress(String shippingAddress) { this.shippingAddress = shippingAddress; }
+    public boolean isRouteFailed() { return routeFailed; }
+    public void setRouteFailed(boolean routeFailed) { this.routeFailed = routeFailed; }
 }

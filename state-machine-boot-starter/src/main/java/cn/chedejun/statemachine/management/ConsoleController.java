@@ -10,11 +10,14 @@ import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 
 @Controller
 @RequestMapping("/statemachine")
 public class ConsoleController {
+    private static final Logger log = LoggerFactory.getLogger(ConsoleController.class);
 
     @GetMapping({"", "/"})
     public String index() {
@@ -116,6 +119,7 @@ public class ConsoleController {
                     try {
                         objectMapper.readerForUpdating(ctx).readValue(cj);
                     } catch (Exception e) {
+                        log.error("[state-machine] Failed to parse contextJson for instance resume id={}", id, e);
                         throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
                     }
                 });
@@ -126,6 +130,7 @@ public class ConsoleController {
             return Map.of("success", true, "message", "已恢复执行", "currentState",
                 updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
         } catch (Exception e) {
+            log.error("[state-machine] Failed to resume instance id={}", id, e);
             return Map.of("success", false, "error", e.getMessage());
         }
     }
@@ -141,6 +146,7 @@ public class ConsoleController {
             var updated = instanceRepository.findById(id);
             return Map.of("message", "Instance re-executed from state: " + updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
         } catch (Exception e) {
+            log.error("[state-machine] Failed to retry instance id={}", id, e);
             return Map.of("message", "Re-execution failed: " + e.getMessage());
         }
     }

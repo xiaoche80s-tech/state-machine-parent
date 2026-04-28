@@ -4,6 +4,8 @@ import cn.chedejun.demo.statemachine.OutboundContext;
 import cn.chedejun.statemachine.core.RetryPolicy;
 import cn.chedejun.statemachine.core.StateMachine;
 import cn.chedejun.statemachine.core.StateMachineBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -122,6 +124,6 @@ public class OutboundConfig {
     }
 
     private void log(String format, Object... args) {
-        System.out.printf("[outbound-machine] " + format + "%n", args);
+        LoggerFactory.getLogger(OutboundConfig.class).info("[outbound-machine] " + format, args);
     }
 }

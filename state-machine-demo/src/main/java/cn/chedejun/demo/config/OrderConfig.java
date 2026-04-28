@@ -4,6 +4,9 @@ import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.statemachine.core.RetryPolicy;
 import cn.chedejun.statemachine.core.StateMachine;
 import cn.chedejun.statemachine.core.StateMachineBuilder;
+import cn.chedejun.statemachine.core.StateMachineException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,10 +34,10 @@ public class OrderConfig {
             .transition("check-inventory", "process-payment", ctx -> ctx.getStock() > 0)
             // 库存不足 -> 通知缺货
             .transition("check-inventory", "notify-shortage", ctx -> ctx.getStock() <= 0)
-            // 支付成功 -> 等待发货确认
-            .transition("process-payment", "await-ship-confirm", ctx -> ctx.isPaymentSuccess())
+            // 支付成功 -> 等待发货确认（50%机率路由失败，模拟网关限流/路由异常）
+            .transition("process-payment", "await-ship-confirm", ctx -> ctx.isPaymentSuccess() && !ctx.isRouteFailed() && Math.random() >= 0.5)
             // 支付失败 -> 失败
-            .transition("process-payment", "order-failed", ctx -> !ctx.isPaymentSuccess())
+            .transition("process-payment", "order-failed", ctx -> !ctx.isPaymentSuccess() || ctx.isRouteFailed())
             // 发货确认 -> 发货
             .transition("await-ship-confirm", "ship-order", ctx -> true)
             // 发货 -> 通知
@@ -55,9 +58,9 @@ public class OrderConfig {
 
     private void processPayment(OrderContext ctx) {
         log("处理支付：orderId=%s, amount=%.2f", ctx.getOrderId(), ctx.getAmount());
-        // 模拟 30% 概率支付失败
+        // 30% 机率执行失败（action 抛异常，触发重试）
         if (Math.random() < 0.3) {
-            throw new RuntimeException("支付网关超时");
+            throw new RuntimeException("支付网关超时（模拟30%失败率）");
         }
         ctx.setPaymentSuccess(true);
     }
@@ -88,6 +91,6 @@ public class OrderConfig {
     }
 
     private void log(String format, Object... args) {
-        System.out.printf("[order-machine] " + format + "%n", args);
+        LoggerFactory.getLogger(OrderConfig.class).info("[order-machine] " + format, args);
     }
 }

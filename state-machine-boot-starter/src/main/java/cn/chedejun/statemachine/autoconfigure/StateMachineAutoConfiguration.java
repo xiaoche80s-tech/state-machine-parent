@@ -17,6 +17,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
 
 @AutoConfiguration
@@ -24,6 +26,7 @@ import javax.sql.DataSource;
 @EnableConfigurationProperties(StateMachineProperties.class)
 @ConditionalOnClass(JdbcTemplate.class)
 public class StateMachineAutoConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(StateMachineAutoConfiguration.class);
 
     @Bean @ConditionalOnBean(DataSource.class)
     public DdlInitializer ddlInitializer(DataSource dataSource, StateMachineProperties properties) {
@@ -49,6 +52,7 @@ public class StateMachineAutoConfiguration {
                     machine.setJdbcTemplate(jdbcTemplate);
                     machine.setRegistry(registry);
                     registry.register(machine);
+                    log.info("[state-machine] Auto-configured state machine bean: {}", beanName);
                 }
                 return bean;
             }
@@ -61,6 +65,7 @@ public class StateMachineAutoConfiguration {
     static class ManagementConfiguration {
         @Bean
         public cn.chedejun.statemachine.management.StateMachineEndpoint stateMachineEndpoint(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+            log.info("[state-machine] Management endpoint enabled");
             var endpoint = new cn.chedejun.statemachine.management.StateMachineEndpoint(registry);
             endpoint.setJdbcTemplate(jdbcTemplate);
             return endpoint;
@@ -73,6 +78,7 @@ public class StateMachineAutoConfiguration {
     static class ConsoleConfiguration {
         @Bean
         public cn.chedejun.statemachine.management.ConsoleController consoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+            log.info("[state-machine] Console enabled at /statemachine");
             return new cn.chedejun.statemachine.management.ConsoleController(registry, jdbcTemplate);
         }
     }

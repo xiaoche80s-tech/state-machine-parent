@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -13,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public class DefinitionRepository {
+    private static final Logger log = LoggerFactory.getLogger(DefinitionRepository.class);
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -29,6 +32,7 @@ public class DefinitionRepository {
             statesJson = objectMapper.writeValueAsString(states);
             transitionsJson = objectMapper.writeValueAsString(transitions);
         } catch (Exception e) {
+            log.error("[state-machine] Failed to serialize definition states/transitions for name={} version={}", name, version, e);
             throw new RuntimeException("Failed to serialize state machine definition", e);
         }
         jdbcTemplate.update(
@@ -52,6 +56,7 @@ public class DefinitionRepository {
             statesJson = objectMapper.writeValueAsString(states);
             transitionsJson = objectMapper.writeValueAsString(transitions);
         } catch (Exception e) {
+            log.error("[state-machine] Failed to serialize definition states/transitions for update name={} version={}", name, version, e);
             throw new RuntimeException("Failed to serialize state machine definition", e);
         }
         jdbcTemplate.update(
@@ -75,7 +80,7 @@ public class DefinitionRepository {
             return Optional.ofNullable(jdbcTemplate.queryForObject(
                 "SELECT * FROM state_machine_definitions WHERE name = ? AND version = ?",
                 rowMapper(), name, version));
-        } catch (Exception e) { return Optional.empty(); }
+        } catch (Exception e) { log.warn("[state-machine] Failed to find definition name={} version={}", name, version, e); return Optional.empty(); }
     }
 
     public List<DefinitionRecord> findAllByName(String name) {

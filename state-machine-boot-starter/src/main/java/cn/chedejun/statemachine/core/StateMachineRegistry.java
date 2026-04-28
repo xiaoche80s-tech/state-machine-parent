@@ -3,10 +3,13 @@ package cn.chedejun.statemachine.core;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import cn.chedejun.statemachine.persistence.DefinitionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class StateMachineRegistry {
+    private static final Logger log = LoggerFactory.getLogger(StateMachineRegistry.class);
     private final DefinitionRepository definitionRepository;
     private final ObjectMapper objectMapper;
     private final Map<String, StateMachine<?>> machines = new ConcurrentHashMap<>();
@@ -44,7 +47,10 @@ public class StateMachineRegistry {
                 "initialDelayMs", machine.getRetryPolicy().getInitialDelayMs(),
                 "maxDelayMs", machine.getRetryPolicy().getMaxDelayMs(),
                 "backoffFactor", machine.getRetryPolicy().getBackoffFactor()));
-        } catch (Exception e) { retryPolicyJson = "{}"; }
+        } catch (Exception e) {
+            log.warn("[state-machine] Failed to serialize retry policy for machine {}:{}", name, version, e);
+            retryPolicyJson = "{}";
+        }
 
         if (definitionRepository.findByNameAndVersion(name, version).isPresent()) {
             definitionRepository.update(name, version, stateEntries, transitionEntries, retryPolicyJson);
@@ -52,6 +58,7 @@ public class StateMachineRegistry {
             definitionRepository.save(name, version, stateEntries, transitionEntries, retryPolicyJson);
         }
         machines.put(machineKey(name, version), machine);
+        log.info("[state-machine] Registered machine {}:{}", name, version);
     }
 
     @SuppressWarnings("unchecked")

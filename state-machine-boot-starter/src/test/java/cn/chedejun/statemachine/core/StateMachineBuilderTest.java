@@ -119,4 +119,47 @@ class StateMachineBuilderTest {
         assertFalse(normal.isSuspended());
         assertTrue(suspended.isSuspended());
     }
+
+    @Test
+    void execute_routeFailure_marksAsFailed() {
+        // step1 有两个出边过渡，但条件都不匹配 → 应该标记为 FAILED
+        StateMachine<Context> m = StateMachineBuilder.<Context>builder("route-failure-test")
+            .state("step1", ctx -> ctx.put("executed", true))
+            .state("step2", ctx -> ctx.put("step2", true))
+            .state("step3", ctx -> ctx.put("step3", true))
+            .transition("step1", "step2", ctx -> false) // 条件永远不匹配
+            .transition("step1", "step3", ctx -> false) // 条件永远不匹配
+            .retryPolicy(RetryPolicy.none())
+            .jdbcTemplate(jdbcTemplate).build();
+
+        StateMachineException ex = assertThrows(StateMachineException.class,
+            () -> m.execute(new Context(), "biz-route-failure"));
+
+        assertTrue(ex.getMessage().contains("No matching transition from state 'step1'"));
+        assertTrue(ex.getMessage().contains("step2"));
+        assertTrue(ex.getMessage().contains("step3"));
+    }
+
+    @Test
+    void execute_routeFailure_errorMessageContainsAvailableTransitions() {
+        StateMachine<Context> m = StateMachineBuilder.<Context>builder("route-error-msg-test")
+            .state("alpha", ctx -> {})
+            .state("beta", ctx -> {})
+            .state("gamma", ctx -> {})
+            .state("delta", ctx -> {})
+            .transition("alpha", "beta", ctx -> false)
+            .transition("alpha", "gamma", ctx -> false)
+            .transition("alpha", "delta", ctx -> false)
+            .retryPolicy(RetryPolicy.none())
+            .jdbcTemplate(jdbcTemplate).build();
+
+        StateMachineException ex = assertThrows(StateMachineException.class,
+            () -> m.execute(new Context(), "biz-error-msg"));
+
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("'alpha'"), "错误消息应包含状态名");
+        assertTrue(msg.contains("beta"), "错误消息应包含可用过渡 beta");
+        assertTrue(msg.contains("gamma"), "错误消息应包含可用过渡 gamma");
+        assertTrue(msg.contains("delta"), "错误消息应包含可用过渡 delta");
+    }
 }

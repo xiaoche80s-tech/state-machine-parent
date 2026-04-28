@@ -20,3 +20,7 @@ management:
     web:
       exposure:
         include: health,state-machines
+logging:
+  level:
+    org.springframework.jdbc.core.JdbcTemplate: DEBUG
+    org.springframework.jdbc.core.StatementCreatorUtils: TRACE

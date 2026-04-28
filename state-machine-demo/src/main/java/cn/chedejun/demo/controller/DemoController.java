@@ -13,6 +13,8 @@ import cn.chedejun.statemachine.persistence.InstanceRepository;
 import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -21,6 +23,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/demo")
 public class DemoController {
+    private static final Logger log = LoggerFactory.getLogger(DemoController.class);
 
     private final StateMachine<OrderContext> orderMachine;
     private final StateMachine<OutboundContext> outboundMachine;
@@ -57,6 +60,7 @@ public class DemoController {
 
         try {
             ExecuteResult result = orderMachine.execute(ctx, orderId);
+            log.info("[demo] Order created: orderId={}, instanceId={}, status={}", orderId, result.instanceId(), result.status());
             return Map.of(
                 "success", true,
                 "orderId", orderId,
@@ -66,6 +70,7 @@ public class DemoController {
                 "message", "订单执行完成"
             );
         } catch (StateMachineException e) {
+            log.error("[demo] Order creation failed: orderId={}", orderId, e);
             return Map.of(
                 "success", false,
                 "orderId", orderId,
@@ -94,12 +99,14 @@ public class DemoController {
                     ctx.setShippingAddress(req.shippingAddress());
                 }
             });
+            log.info("[demo] Order resumed: businessId={}", req.businessId());
             return Map.of(
                 "success", true,
                 "businessId", req.businessId(),
                 "message", "订单已恢复执行，请查询 /demo/orders 查看最新状态"
             );
         } catch (StateMachineException e) {
+            log.error("[demo] Order resume failed: businessId={}", req.businessId(), e);
             return Map.of(
                 "success", false,
                 "status", "FAILED",
@@ -177,6 +184,7 @@ public class DemoController {
 
         try {
             ExecuteResult result = outboundMachine.execute(ctx, outboundNo);
+            log.info("[demo] Outbound created: outboundNo={}, instanceId={}, status={}", outboundNo, result.instanceId(), result.status());
             return Map.of(
                 "success", true,
                 "outboundNo", outboundNo,
@@ -186,9 +194,8 @@ public class DemoController {
                 "message", result.status()
             );
         } catch (StateMachineException e) {
+            log.error("[demo] Outbound creation failed: outboundNo={}", outboundNo, e);
             return Map.of(
-                "success", false,
-                "outboundNo", outboundNo,
                 "status", "FAILED",
                 "message", e.getMessage(),
                 "stackTrace", stackTrace(e)
@@ -214,12 +221,14 @@ public class DemoController {
                     ctx.setCarrierCode(req.carrierCode());
                 }
             });
+            log.info("[demo] Outbound resumed: businessId={}", req.businessId());
             return Map.of(
                 "success", true,
                 "businessId", req.businessId(),
                 "message", "出库已恢复执行，请查询 /demo/outbounds 查看最新状态"
             );
         } catch (StateMachineException e) {
+            log.error("[demo] Outbound resume failed: businessId={}", req.businessId(), e);
             return Map.of(
                 "success", false,
                 "status", "FAILED",
