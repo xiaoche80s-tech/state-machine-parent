@@ -422,7 +422,7 @@
                                         <!-- IO 块：默认折叠显示摘要，点击展开完整 JSON -->
                                         <div class="timeline-io" v-if="s.input || s.output">
                                             <div class="io-block" v-if="s.input">
-                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'in')" style="cursor:pointer">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'in')">
                                                     <span class="io-label io-label--in">IN</span>
                                                     <span class="io-summary">{{ jsonSummary(s.input) }}</span>
                                                     <div class="io-actions">
@@ -437,7 +437,7 @@
                                                 <pre class="io-code-full" :class="{ 'io-collapsed': !isSnapshotIoExpanded(s.id, 'in') }">{{ isSnapshotIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                             </div>
                                             <div class="io-block" v-if="s.output">
-                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'out')" style="cursor:pointer">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'out')">
                                                     <span class="io-label io-label--out">OUT</span>
                                                     <span class="io-summary">{{ jsonSummary(s.output) }}</span>
                                                     <div class="io-actions">
@@ -555,7 +555,7 @@
                                     <div v-if="s.errorMessage" class="timeline-error-inline">{{ s.errorMessage }}</div>
                                     <div class="timeline-io" v-if="s.input || s.output">
                                         <div class="io-block" v-if="s.input">
-                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'in')" style="cursor:pointer">
+                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'in')">
                                                 <span class="io-label io-label--in">IN</span>
                                                 <span class="io-summary">{{ jsonSummary(s.input) }}</span>
                                                 <div class="io-actions">
@@ -570,7 +570,7 @@
                                             <pre class="io-code-full" :class="{ 'io-collapsed': !isDrawerIoExpanded(s.id, 'in') }">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                         </div>
                                         <div class="io-block" v-if="s.output">
-                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'out')" style="cursor:pointer">
+                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'out')">
                                                 <span class="io-label io-label--out">OUT</span>
                                                 <span class="io-summary">{{ jsonSummary(s.output) }}</span>
                                                 <div class="io-actions">

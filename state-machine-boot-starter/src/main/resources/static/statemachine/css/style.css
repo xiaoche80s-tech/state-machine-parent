@@ -770,19 +770,6 @@ a:hover { color: var(--primary-light); }
     border: 1px solid var(--gray-100);
     overflow-x: auto;
 }
-.io-raw {
-    white-space: nowrap;
-    overflow-x: auto;
-}
-
-.timeline-error {
-    font-size: 0.75rem;
-    color: var(--red);
-    background: var(--red-bg);
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    margin-top: 2px;
-}
 
 /* ===== Route-type Timeline Item ===== */
 .timeline-item.route-type .timeline-marker.route-marker {
