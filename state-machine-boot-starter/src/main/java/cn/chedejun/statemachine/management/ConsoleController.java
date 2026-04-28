@@ -4,15 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
 import cn.chedejun.statemachine.domain.engine.StateMachine;
+import cn.chedejun.statemachine.domain.repository.InstanceRepository;
+import cn.chedejun.statemachine.domain.repository.SnapshotRepository;
 import cn.chedejun.statemachine.domain.shared.BusinessId;
 import cn.chedejun.statemachine.domain.shared.InstanceId;
+import cn.chedejun.statemachine.domain.shared.InstanceStatus;
+import cn.chedejun.statemachine.domain.shared.MachineName;
 import cn.chedejun.statemachine.domain.shared.StateName;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.MachineDefinitionDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
-import cn.chedejun.statemachine.persistence.InstanceRepository;
-import cn.chedejun.statemachine.persistence.SnapshotRepository;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
@@ -35,11 +36,13 @@ public class ConsoleController {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @SuppressWarnings("unchecked")
-    public ConsoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate,
+    public ConsoleController(StateMachineRegistry registry,
+                              InstanceRepository instanceRepository,
+                              SnapshotRepository snapshotRepository,
                               InstanceExecutionService<Object> executionService) {
         this.registry = registry;
-        this.instanceRepository = new InstanceRepository(jdbcTemplate);
-        this.snapshotRepository = new SnapshotRepository(jdbcTemplate);
+        this.instanceRepository = instanceRepository;
+        this.snapshotRepository = snapshotRepository;
         this.executionService = executionService;
     }
 
@@ -47,11 +50,12 @@ public class ConsoleController {
     public List<Map<String, Object>> listMachines() {
         return registry.getMachineNames().stream().map(name -> {
             var versions = registry.getVersions(name);
+            MachineName machineName = MachineName.of(name);
             return Map.<String, Object>of(
                 "name", name, "versionCount", versions.size(),
-                "runningInstances", instanceRepository.countByMachineNameAndStatus(name, "RUNNING"),
-                "failedInstances", instanceRepository.countByMachineNameAndStatus(name, "FAILED"),
-                "suspendedInstances", instanceRepository.countByMachineNameAndStatus(name, "SUSPENDED"));
+                "runningInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.RUNNING),
+                "failedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.FAILED),
+                "suspendedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.SUSPENDED));
         }).toList();
     }
 
@@ -79,42 +83,48 @@ public class ConsoleController {
             @RequestParam(required = false) String instanceId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        boolean hasFilters = status != null || businessId != null || instanceId != null;
+        MachineName machineName = MachineName.of(name);
+        InstanceStatus statusEnum = status != null && !status.isEmpty() ? InstanceStatus.valueOf(status) : null;
+        BusinessId businessIdObj = businessId != null && !businessId.isEmpty() ? BusinessId.of(businessId) : null;
+        InstanceId instanceIdObj = instanceId != null && !instanceId.isEmpty() ? InstanceId.of(instanceId) : null;
+
+        boolean hasFilters = statusEnum != null || businessIdObj != null || instanceIdObj != null;
         var records = hasFilters
-            ? instanceRepository.findByMachineNameWithFilters(name, status, businessId, instanceId, page * size, size)
-            : instanceRepository.findByMachineName(name, page * size, size);
+            ? instanceRepository.findByMachineNameWithFilters(machineName, statusEnum, businessIdObj, instanceIdObj, page * size, size)
+            : instanceRepository.findByMachineName(machineName, page * size, size);
         long total = hasFilters
-            ? instanceRepository.countByMachineNameWithFilters(name, status, businessId, instanceId)
-            : instanceRepository.countByMachineNameAndStatus(name, null);
-        var dtos = records.stream().map(r -> new InstanceDTO(r.id(), r.machineName(), r.definitionVersion(),
-            r.currentState(), r.status(), r.businessId(), r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
+            ? instanceRepository.countByMachineNameWithFilters(machineName, statusEnum, businessIdObj, instanceIdObj)
+            : instanceRepository.countByMachineNameWithFilters(machineName, null, null, null);
+        var dtos = records.stream().map(r -> new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
+            r.currentState().value(), r.status().name(), r.businessId() != null ? r.businessId().value() : null, r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
         return Map.of("instances", dtos, "total", total, "page", page, "size", size);
     }
 
     @GetMapping("/api/instances/{id}") @ResponseBody
     public Map<String, Object> getInstanceDetail(@PathVariable String id) {
-        var inst = instanceRepository.findById(id);
+        var inst = instanceRepository.findById(InstanceId.of(id));
         if (inst.isEmpty()) return Map.of("error", "Instance not found");
-        var snaps = snapshotRepository.findByInstanceId(id).stream()
-            .map(s -> new SnapshotDTO(s.id(), s.stateName(), s.inputJson(), s.outputJson(),
-                s.status(), s.errorMessage(), s.attempt(), s.snapshotType(), s.executedAt())).toList();
-        var dto = new InstanceDTO(inst.get().id(), inst.get().machineName(), inst.get().definitionVersion(),
-            inst.get().currentState(), inst.get().status(), inst.get().businessId(), inst.get().retryCount(),
-            inst.get().errorMessage(), inst.get().createdAt(), inst.get().updatedAt());
+        var snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
+            .map(s -> new SnapshotDTO(s.id().value(), s.stateName().value(), s.inputJson(), s.outputJson(),
+                s.status().name(), s.errorMessage(), s.attempt(), s.snapshotType(), s.executedAt())).toList();
+        var r = inst.get();
+        var dto = new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
+            r.currentState().value(), r.status().name(), r.businessId() != null ? r.businessId().value() : null, r.retryCount(),
+            r.errorMessage(), r.createdAt(), r.updatedAt());
         return Map.of("instance", dto, "snapshots", snaps);
     }
 
     @PostMapping("/api/instances/{id}/resume") @ResponseBody
     public Map<String, Object> resumeInstance(@PathVariable String id,
             @RequestBody Map<String, String> params) {
-        var inst = instanceRepository.findById(id);
+        var inst = instanceRepository.findById(InstanceId.of(id));
         if (inst.isEmpty()) return Map.of("success", false, "error", "Instance not found");
         String expectedState = params.get("expectedCurrentState");
         if (expectedState == null || expectedState.isBlank()) {
             return Map.of("success", false, "error", "Missing expectedCurrentState");
         }
-        var machineOpt = registry.getLatest(inst.get().machineName());
-        if (machineOpt.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName());
+        var machineOpt = registry.getLatest(inst.get().machineName().value());
+        if (machineOpt.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName().value());
         try {
             String contextJson = params.get("contextJson");
             @SuppressWarnings("unchecked")
@@ -135,9 +145,9 @@ public class ConsoleController {
                 executionService.resumeByInstanceId(m, InstanceId.of(id),
                     StateName.of(expectedState), c -> {});
             }
-            var updated = instanceRepository.findById(id);
+            var updated = instanceRepository.findById(InstanceId.of(id));
             return Map.of("success", true, "message", "已恢复执行", "currentState",
-                updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
+                updated.map(i -> i.currentState().value()).orElse("unknown"));
         } catch (Exception e) {
             log.error("[state-machine] Failed to resume instance id={}", id, e);
             return Map.of("success", false, "error", e.getMessage());
@@ -146,16 +156,16 @@ public class ConsoleController {
 
     @PostMapping("/api/instances/{id}/retry") @ResponseBody
     public Map<String, String> retryInstance(@PathVariable String id) {
-        var inst = instanceRepository.findById(id);
+        var inst = instanceRepository.findById(InstanceId.of(id));
         if (inst.isEmpty()) return Map.of("error", "Instance not found");
-        var machineOpt = registry.getLatest(inst.get().machineName());
-        if (machineOpt.isEmpty()) return Map.of("error", "State machine not found: " + inst.get().machineName());
+        var machineOpt = registry.getLatest(inst.get().machineName().value());
+        if (machineOpt.isEmpty()) return Map.of("error", "State machine not found: " + inst.get().machineName().value());
         try {
             @SuppressWarnings("unchecked")
             StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
             executionService.retry(m, InstanceId.of(id));
-            var updated = instanceRepository.findById(id);
-            return Map.of("message", "Instance re-executed from state: " + updated.map(InstanceRepository.InstanceRecord::currentState).orElse("unknown"));
+            var updated = instanceRepository.findById(InstanceId.of(id));
+            return Map.of("message", "Instance re-executed from state: " + updated.map(i -> i.currentState().value()).orElse("unknown"));
         } catch (Exception e) {
             log.error("[state-machine] Failed to retry instance id={}", id, e);
             return Map.of("message", "Re-execution failed: " + e.getMessage());

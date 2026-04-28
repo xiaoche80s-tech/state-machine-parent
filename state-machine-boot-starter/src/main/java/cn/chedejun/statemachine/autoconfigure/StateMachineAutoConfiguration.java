@@ -109,11 +109,12 @@ public class StateMachineAutoConfiguration {
     @ConditionalOnProperty(prefix = "state-machine.management", name = "enabled", havingValue = "true", matchIfMissing = true)
     static class ManagementConfiguration {
         @Bean
-        public cn.chedejun.statemachine.management.StateMachineEndpoint stateMachineEndpoint(StateMachineRegistry registry, JdbcTemplate jdbcTemplate) {
+        public cn.chedejun.statemachine.management.StateMachineEndpoint stateMachineEndpoint(
+                StateMachineRegistry registry,
+                InstanceRepository instanceRepository,
+                DefinitionRepository definitionRepository) {
             log.info("[state-machine] Management endpoint enabled");
-            var endpoint = new cn.chedejun.statemachine.management.StateMachineEndpoint(registry);
-            endpoint.setJdbcTemplate(jdbcTemplate);
-            return endpoint;
+            return new cn.chedejun.statemachine.management.StateMachineEndpoint(registry, instanceRepository, definitionRepository);
         }
     }
 
@@ -122,9 +123,14 @@ public class StateMachineAutoConfiguration {
     @ConditionalOnProperty(prefix = "state-machine.console", name = "enabled", havingValue = "true", matchIfMissing = true)
     static class ConsoleConfiguration {
         @Bean
-        public cn.chedejun.statemachine.management.ConsoleController consoleController(StateMachineRegistry registry, JdbcTemplate jdbcTemplate, InstanceExecutionService<Object> executionService) {
+        public cn.chedejun.statemachine.management.ConsoleController consoleController(
+                StateMachineRegistry registry,
+                InstanceRepository instanceRepository,
+                SnapshotRepository snapshotRepository,
+                InstanceExecutionService<Object> executionService) {
             log.info("[state-machine] Console enabled at /statemachine");
-            return new cn.chedejun.statemachine.management.ConsoleController(registry, jdbcTemplate, executionService);
+            return new cn.chedejun.statemachine.management.ConsoleController(
+                registry, instanceRepository, snapshotRepository, executionService);
         }
     }
 }

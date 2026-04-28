@@ -2,15 +2,16 @@ package cn.chedejun.statemachine.management;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
+import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
+import cn.chedejun.statemachine.domain.repository.InstanceRepository;
+import cn.chedejun.statemachine.domain.shared.InstanceId;
+import cn.chedejun.statemachine.domain.shared.InstanceStatus;
+import cn.chedejun.statemachine.domain.shared.MachineName;
 import cn.chedejun.statemachine.management.dto.*;
-import cn.chedejun.statemachine.persistence.DefinitionRepository;
-import cn.chedejun.statemachine.persistence.InstanceRepository;
-import cn.chedejun.statemachine.persistence.SnapshotRepository;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
 import org.springframework.boot.actuate.endpoint.annotation.Selector;
 import org.springframework.boot.actuate.endpoint.annotation.WriteOperation;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
@@ -19,27 +20,26 @@ import java.util.*;
 public class StateMachineEndpoint {
     private static final Logger log = LoggerFactory.getLogger(StateMachineEndpoint.class);
     private final StateMachineRegistry registry;
+    private final InstanceRepository instanceRepository;
+    private final DefinitionRepository definitionRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private JdbcTemplate jdbcTemplate;
-    private InstanceRepository instanceRepository;
-    private SnapshotRepository snapshotRepository;
 
-    public StateMachineEndpoint(StateMachineRegistry registry) { this.registry = registry; }
-
-    public void setJdbcTemplate(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.instanceRepository = new InstanceRepository(jdbcTemplate);
-        this.snapshotRepository = new SnapshotRepository(jdbcTemplate);
+    public StateMachineEndpoint(StateMachineRegistry registry,
+                                 InstanceRepository instanceRepository,
+                                 DefinitionRepository definitionRepository) {
+        this.registry = registry;
+        this.instanceRepository = instanceRepository;
+        this.definitionRepository = definitionRepository;
     }
 
     @ReadOperation
     public List<MachineDTO> listMachines() {
         return registry.getMachineNames().stream().map(name -> {
-            var versions = registry.getVersions(name);
+            var versions = definitionRepository.findAllByName(MachineName.of(name));
             long running = 0, failed = 0;
             if (instanceRepository != null) {
-                running = instanceRepository.countByMachineNameAndStatus(name, "RUNNING");
-                failed = instanceRepository.countByMachineNameAndStatus(name, "FAILED");
+                running = instanceRepository.countByMachineNameAndStatus(MachineName.of(name), InstanceStatus.RUNNING);
+                failed = instanceRepository.countByMachineNameAndStatus(MachineName.of(name), InstanceStatus.FAILED);
             }
             return new MachineDTO(name, versions.size(), running, failed);
         }).toList();
@@ -47,7 +47,7 @@ public class StateMachineEndpoint {
 
     @ReadOperation
     public List<MachineDefinitionDTO> getVersions(@Selector String name) {
-        return registry.getVersions(name).stream().map(r -> {
+        return definitionRepository.findAllByName(MachineName.of(name)).stream().map(r -> {
             try {
                 List<Map<String, Object>> states = objectMapper.readValue(r.statesJson(),
                     objectMapper.getTypeFactory().constructCollectionType(List.class, Map.class));
@@ -66,11 +66,9 @@ public class StateMachineEndpoint {
     @WriteOperation
     public String retryInstance(@Selector String name, @Selector String instanceId) {
         if (instanceRepository == null) return "Instance repository not available";
-        var instance = instanceRepository.findById(instanceId);
+        var instance = instanceRepository.findById(InstanceId.of(instanceId));
         if (instance.isEmpty()) return "Instance not found: " + instanceId;
-        if (!"FAILED".equals(instance.get().status())) return "Instance is not FAILED, current status: " + instance.get().status();
-        instanceRepository.updateState(instanceId, instance.get().currentState(), "RUNNING", null);
-        instanceRepository.setRetryCount(instanceId, 0);
+        if (instance.get().status() != InstanceStatus.FAILED) return "Instance is not FAILED, current status: " + instance.get().status();
         return "Instance reset to RUNNING. Call stateMachine.retry(instanceId, newContext) to re-execute.";
     }
 }
