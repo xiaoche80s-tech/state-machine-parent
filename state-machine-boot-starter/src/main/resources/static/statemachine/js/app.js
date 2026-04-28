@@ -51,6 +51,7 @@ createApp({
         const drawerInstance = ref(null);
         const drawerSnapshots = ref([]);
         const drawerIoExpanded = ref(new Set());
+        const snapshotIoExpanded = ref(new Set()); // 主视图快照 IO 块展开状态
 
         // Stats
         const totalMachines = computed(() => machines.value.length);
@@ -66,9 +67,29 @@ createApp({
             return map[s] || s;
         }
         function shortJson(s) { return s.length > 60 ? s.substring(0, 60) + '\u2026' : s; }
+        function jsonSummary(jsonStr) {
+            try {
+                const obj = JSON.parse(jsonStr);
+                if (obj === null) return 'null';
+                if (typeof obj !== 'object') return typeof obj;
+                const keys = Object.keys(obj);
+                const nested = keys.filter(k => typeof obj[k] === 'object' && obj[k] !== null).length;
+                return keys.length + ' \u4e2a\u5b57\u6bb5' + (nested ? ', ' + nested + ' \u4e2a\u5d4c\u5957' : '');
+            } catch {
+                return '\u65e0\u6548 JSON';
+            }
+        }
         function formatJson(s) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } }
         function parseRouteOutput(output) { try { return JSON.parse(output); } catch { return output; } }
         function toggle(k) { expanded.value[k] = !expanded.value[k]; }
+        function toggleSnapshotIo(snapshotId, dir) {
+            const key = snapshotId + ':' + dir;
+            if (snapshotIoExpanded.value.has(key)) snapshotIoExpanded.value.delete(key);
+            else snapshotIoExpanded.value.add(key);
+        }
+        function isSnapshotIoExpanded(snapshotId, dir) {
+            return snapshotIoExpanded.value.has(snapshotId + ':' + dir);
+        }
 
         const toastMsg = ref('');
         const toastVisible = ref(false);
@@ -469,6 +490,7 @@ createApp({
         }
 
         async function openDrawer(instanceId) {
+            snapshotIoExpanded.value = new Set(); // 清空主视图折叠状态
             drawerVisible.value = true;
             drawerIoExpanded.value = new Set();
             const data = await API.getInstanceDetail(instanceId);
@@ -808,13 +830,13 @@ createApp({
             totalMachines, totalRunning, totalFailed, totalSuspended, currentMachineStats, machineInstances, machineFilterStatus,
             machineFilterBusinessId, machineFilterInstanceId,
             machinePage, machinePageSize, machineTotalPages, machineTotalElements,
-            shortId, statusClass, statusLabel, shortJson, formatJson, parseRouteOutput, toggle,
+            shortId, statusClass, statusLabel, shortJson, jsonSummary, formatJson, parseRouteOutput, toggle, toggleSnapshotIo, isSnapshotIoExpanded,
             relativeTime, formatTime, formatTimeShort,
             getMachineHealth, isMachineActive, goInstance,
             getStateType, getTransitionsFrom,
             loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, loadMachineInstances,
             copyText,
-            drawerVisible, drawerInstance, drawerSnapshots, openDrawer, closeDrawer, toggleDrawerIo, isDrawerIoExpanded,
+            drawerVisible, drawerInstance, drawerSnapshots, snapshotIoExpanded, openDrawer, closeDrawer, toggleDrawerIo, isDrawerIoExpanded,
             toastMsg, toastVisible, showToast,
             resumeModalVisible, resumeForm, resumeLoading, resumeContextMode, resumeContextTree, resumeContextError,
             resumeMergeText, mergeError, mergeSuccess,
