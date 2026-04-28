@@ -400,7 +400,7 @@
                                                 <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
                                             </div>
                                         </div>
-                                        <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
+                                        <div v-if="s.errorMessage" class="timeline-error-inline">{{ s.errorMessage }}</div>
                                     </div>
                                 </template>
                                 <!-- NODE snapshot: existing display -->
@@ -409,7 +409,7 @@
                                         <svg v-if="s.status === 'SUCCESS'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
                                         <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                     </div>
-                                    <div class="timeline-content">
+                                    <div class="timeline-content" :class="{ 'has-error': s.errorMessage }">
                                         <div class="timeline-header">
                                             <span class="timeline-step">{{ s.stateName }}</span>
                                             <div class="timeline-meta">
@@ -417,29 +417,41 @@
                                                 <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
                                             </div>
                                         </div>
+                                        <!-- 错误信息前置：FAILED 状态在 header 下方直接显示 -->
+                                        <div v-if="s.errorMessage" class="timeline-error-inline">{{ s.errorMessage }}</div>
+                                        <!-- IO 块：默认折叠显示摘要，点击展开完整 JSON -->
                                         <div class="timeline-io" v-if="s.input || s.output">
                                             <div class="io-block" v-if="s.input">
-                                                <div class="io-header">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'in')" style="cursor:pointer">
                                                     <span class="io-label io-label--in">IN</span>
+                                                    <span class="io-summary">{{ jsonSummary(s.input) }}</span>
                                                     <div class="io-actions">
-                                                        <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}">预览</button>
-                                                        <button class="io-copy" @click.stop="copyText(s.input)">复制</button>
+                                                        <button class="io-icon-btn" @click.stop="toggleSnapshotIo(s.id, 'in')" :class="{active: isSnapshotIoExpanded(s.id, 'in')}" title="展开/折叠">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                        </button>
+                                                        <button class="io-icon-btn" @click.stop="copyText(s.input)" title="复制">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'in') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
+                                                <pre class="io-code-full" :class="{ 'io-collapsed': !isSnapshotIoExpanded(s.id, 'in') }">{{ isSnapshotIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
                                             </div>
                                             <div class="io-block" v-if="s.output">
-                                                <div class="io-header">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'out')" style="cursor:pointer">
                                                     <span class="io-label io-label--out">OUT</span>
+                                                    <span class="io-summary">{{ jsonSummary(s.output) }}</span>
                                                     <div class="io-actions">
-                                                        <button class="io-preview-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}">预览</button>
-                                                        <button class="io-copy" @click.stop="copyText(s.output)">复制</button>
+                                                        <button class="io-icon-btn" @click.stop="toggleSnapshotIo(s.id, 'out')" :class="{active: isSnapshotIoExpanded(s.id, 'out')}" title="展开/折叠">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                        </button>
+                                                        <button class="io-icon-btn" @click.stop="copyText(s.output)" title="复制">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <pre class="io-code-full" :class="isDrawerIoExpanded(s.id, 'out') ? 'io-formatted' : 'io-raw'">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
+                                                <pre class="io-code-full" :class="{ 'io-collapsed': !isSnapshotIoExpanded(s.id, 'out') }">{{ isSnapshotIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
                                             </div>
                                         </div>
-                                        <div v-if="s.errorMessage" class="timeline-error">{{ s.errorMessage }}</div>
                                     </div>
                                 </template>
                             </div>
