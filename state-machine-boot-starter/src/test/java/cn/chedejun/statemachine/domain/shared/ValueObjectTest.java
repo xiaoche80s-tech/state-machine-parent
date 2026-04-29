@@ -10,7 +10,7 @@ class ValueObjectTest {
     @Test void instanceId_generate_returnsNonNull() {
         InstanceId id = InstanceId.generate();
         assertNotNull(id);
-        assertFalse(id.value().isBlank());
+        assertFalse(id.value().trim().isEmpty());
     }
 
     @Test void instanceId_of_validValue_returnsInstance() {

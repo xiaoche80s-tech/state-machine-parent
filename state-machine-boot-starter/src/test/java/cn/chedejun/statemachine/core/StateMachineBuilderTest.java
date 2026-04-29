@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,7 +25,7 @@ class StateMachineBuilderTest {
         ds.setUrl("jdbc:h2:mem:testdb_builder;DB_CLOSE_DELAY=-1;MODE=MySQL;DATABASE_TO_UPPER=false");
         jdbcTemplate = new JdbcTemplate(ds);
         try {
-            String sql = new String(Objects.requireNonNull(getClass().getResourceAsStream("/ddl/h2.sql")).readAllBytes(), StandardCharsets.UTF_8);
+            String sql = new Scanner(Objects.requireNonNull(getClass().getResourceAsStream("/ddl/h2.sql")), StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
             for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) jdbcTemplate.execute(t); }
         } catch (Exception e) { throw new RuntimeException(e); }
         DefinitionRepository defRepo = new JdbcDefinitionRepository(jdbcTemplate, new ObjectMapper());
@@ -114,9 +115,9 @@ class StateMachineBuilderTest {
             .build();
 
         cn.chedejun.statemachine.core.State<Context> normal = m.getStates().stream()
-            .filter(s -> s.getName().equals("normal")).findFirst().orElseThrow();
+            .filter(s -> s.getName().equals("normal")).findFirst().orElseThrow(() -> new AssertionError("State not found"));
         cn.chedejun.statemachine.core.State<Context> suspended = m.getStates().stream()
-            .filter(s -> s.getName().equals("suspend-point")).findFirst().orElseThrow();
+            .filter(s -> s.getName().equals("suspend-point")).findFirst().orElseThrow(() -> new AssertionError("State not found"));
 
         assertFalse(normal.isSuspended());
         assertTrue(suspended.isSuspended());

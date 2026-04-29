@@ -15,7 +15,6 @@ import cn.chedejun.statemachine.interfaces.StateMachineFacade;
 import cn.chedejun.statemachine.persistence.DdlInitializer;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -30,7 +29,7 @@ import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
 import java.util.List;
 
-@AutoConfiguration
+@Configuration
 @AutoConfigureAfter(DataSourceAutoConfiguration.class)
 @EnableConfigurationProperties(StateMachineProperties.class)
 @ConditionalOnClass(JdbcTemplate.class)
@@ -77,12 +76,14 @@ public class StateMachineAutoConfiguration {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-                if (bean instanceof StateMachineBuilder<?> builder) {
+                if (bean instanceof StateMachineBuilder<?>) {
+                    @SuppressWarnings("unchecked")
+                    StateMachineBuilder<Object> builder = (StateMachineBuilder<Object>) bean;
                     builder.jdbcTemplate(jdbcTemplate);
                     builder.registry(registry);
                     return bean;
                 }
-                if (bean instanceof StateMachineFacade<?> facade) {
+                if (bean instanceof StateMachineFacade<?>) {
                     log.info("[state-machine] 自动配置门面: {}", beanName);
                     return bean;
                 }
@@ -96,7 +97,10 @@ public class StateMachineAutoConfiguration {
         return new org.springframework.beans.factory.config.BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-                if (bean instanceof cn.chedejun.statemachine.domain.engine.StateMachine<?> machine) {
+                if (bean instanceof cn.chedejun.statemachine.domain.engine.StateMachine<?>) {
+                    @SuppressWarnings("unchecked")
+                    cn.chedejun.statemachine.domain.engine.StateMachine<Object> machine =
+                        (cn.chedejun.statemachine.domain.engine.StateMachine<Object>) bean;
                     registry.register(machine);
                 }
                 return bean;

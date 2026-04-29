@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class StateMachineRegistry {
     private static final Logger log = LoggerFactory.getLogger(StateMachineRegistry.class);
@@ -37,21 +38,22 @@ public class StateMachineRegistry {
                 m.put("actionClass", s.getAction().getClass().getName());
                 if (s.isSuspended()) m.put("suspended", true);
                 return m;
-            }).toList();
+            }).collect(Collectors.toList());
         List<Map<String, Object>> transitionEntries = machine.getTransitions().stream()
             .map(t -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("from", t.getFrom()); m.put("to", t.getTo());
                 m.put("conditionExpression", t.getCondition() != null ? t.getCondition().getClass().getName() : null);
                 return m;
-            }).toList();
+            }).collect(Collectors.toList());
         String retryPolicyJson;
         try {
-            retryPolicyJson = objectMapper.writeValueAsString(Map.of(
-                "maxAttempts", machine.getRetryPolicy().getMaxAttempts(),
-                "initialDelayMs", machine.getRetryPolicy().getInitialDelayMs(),
-                "maxDelayMs", machine.getRetryPolicy().getMaxDelayMs(),
-                "backoffFactor", machine.getRetryPolicy().getBackoffFactor()));
+            Map<String, Object> retryPolicy = new LinkedHashMap<>();
+            retryPolicy.put("maxAttempts", machine.getRetryPolicy().getMaxAttempts());
+            retryPolicy.put("initialDelayMs", machine.getRetryPolicy().getInitialDelayMs());
+            retryPolicy.put("maxDelayMs", machine.getRetryPolicy().getMaxDelayMs());
+            retryPolicy.put("backoffFactor", machine.getRetryPolicy().getBackoffFactor());
+            retryPolicyJson = objectMapper.writeValueAsString(Collections.unmodifiableMap(retryPolicy));
         } catch (Exception e) {
             log.warn("[state-machine] 序列化状态机重试策略失败 {}:{}", name, version, e);
             retryPolicyJson = "{}";

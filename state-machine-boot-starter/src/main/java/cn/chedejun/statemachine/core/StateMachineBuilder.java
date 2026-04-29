@@ -19,7 +19,7 @@ public class StateMachineBuilder<C> {
     private static final AtomicInteger versionCounter = new AtomicInteger(0);
 
     public StateMachineBuilder(String name) {
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("State machine name cannot be null or empty");
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("State machine name cannot be null or empty");
         this.name = name;
     }
 

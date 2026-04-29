@@ -31,8 +31,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,8 +43,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class DdlExecutor {
     DdlExecutor(DataSource dataSource) {
         try {
-            var template = new JdbcTemplate(dataSource);
-            String sql = new String(Objects.requireNonNull(DdlExecutor.class.getResourceAsStream("/ddl/postgresql.sql")).readAllBytes(), StandardCharsets.UTF_8);
+            JdbcTemplate template = new JdbcTemplate(dataSource);
+            String sql = new Scanner(Objects.requireNonNull(DdlExecutor.class.getResourceAsStream("/ddl/postgresql.sql")), StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
             for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) template.execute(t); }
             try { template.execute("ALTER TABLE state_machine_snapshots ADD COLUMN snapshot_type VARCHAR(16) NOT NULL DEFAULT 'NODE'"); } catch (Exception e) { /* 列已存在 */ }
         } catch (Exception e) { throw new RuntimeException("Failed to execute DDL", e); }
@@ -69,7 +72,7 @@ class StateMachineIntegrationTest {
 
         @Bean
         public DdlExecutor ddlExecutor(DataSource dataSource) {
-            var template = new JdbcTemplate(dataSource);
+            JdbcTemplate template = new JdbcTemplate(dataSource);
             template.execute("DELETE FROM state_machine_snapshots");
             template.execute("DELETE FROM state_machine_instances");
             template.execute("DELETE FROM state_machine_definitions");
@@ -144,7 +147,7 @@ class StateMachineIntegrationTest {
     @Autowired(required = false) private ConsoleController consoleController;
 
     private String resolveDefinitionId(String machineName) {
-        var definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of(machineName));
+        List<cn.chedejun.statemachine.domain.data.DefinitionData> definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of(machineName));
         if (definitions.isEmpty()) throw new StateMachineException("Definition not found: " + machineName);
         return definitions.get(0).id();
     }
@@ -198,13 +201,13 @@ class StateMachineIntegrationTest {
         assertTrue(ctx.isProcessed());
         assertTrue(ctx.isCompleted());
 
-        var instance = instanceRepository.findById(InstanceId.of(result.instanceId()));
+        Optional<cn.chedejun.statemachine.domain.data.InstanceData> instance = instanceRepository.findById(InstanceId.of(result.instanceId()));
         assertTrue(instance.isPresent());
         assertEquals(InstanceStatus.COMPLETED, instance.get().status());
         assertEquals("complete", instance.get().currentState().value());
         assertEquals("test-machine", instance.get().machineName().value());
 
-        var snapshots = snapshotRepository.findByInstanceId(InstanceId.of(result.instanceId()));
+        List<cn.chedejun.statemachine.domain.data.SnapshotData> snapshots = snapshotRepository.findByInstanceId(InstanceId.of(result.instanceId()));
         assertEquals(5, snapshots.size());
         assertEquals("NODE", snapshots.get(0).snapshotType());
         assertEquals("ROUTE", snapshots.get(1).snapshotType());
@@ -220,9 +223,9 @@ class StateMachineIntegrationTest {
     @Test
     @Order(11)
     void execute_definitionSavedToDatabase() {
-        var definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of("test-machine"));
+        List<cn.chedejun.statemachine.domain.data.DefinitionData> definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of("test-machine"));
         assertFalse(definitions.isEmpty());
-        var def = definitions.get(0);
+        cn.chedejun.statemachine.domain.data.DefinitionData def = definitions.get(0);
         assertEquals("test-machine", def.name().value());
         assertNotNull(def.statesJson());
         assertNotNull(def.transitionsJson());
@@ -243,11 +246,11 @@ class StateMachineIntegrationTest {
         TestContext ctx = new TestContext();
         assertThrows(StateMachineException.class, () -> failingMachine.execute(ctx, "biz-failing"));
 
-        var instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
+        List<cn.chedejun.statemachine.domain.data.InstanceData> instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
         assertEquals(1, instances.size());
         assertEquals(InstanceStatus.FAILED, instances.get(0).status());
 
-        var snapshots = snapshotRepository.findByInstanceId(instances.get(0).id());
+        List<cn.chedejun.statemachine.domain.data.SnapshotData> snapshots = snapshotRepository.findByInstanceId(instances.get(0).id());
         assertFalse(snapshots.isEmpty());
         snapshots.forEach(s -> assertEquals(cn.chedejun.statemachine.domain.shared.ExecutionStatus.FAILED, s.status()));
     }
@@ -258,7 +261,7 @@ class StateMachineIntegrationTest {
         TestContext ctx = new TestContext();
         try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
 
-        var instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
+        List<cn.chedejun.statemachine.domain.data.InstanceData> instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
         assertEquals(1, instances.size());
         assertEquals(InstanceStatus.FAILED, instances.get(0).status());
         assertTrue(instances.get(0).retryCount() >= 0);
@@ -272,11 +275,11 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        var machines = consoleController.listMachines();
+        List<Map<String, Object>> machines = consoleController.listMachines();
         assertFalse(machines.isEmpty());
-        var testMachineInfo = machines.stream()
+        Map<String, Object> testMachineInfo = machines.stream()
             .filter(m -> "test-machine".equals(m.get("name")))
-            .findFirst().orElseThrow();
+            .findFirst().orElseThrow(() -> new AssertionError("Test machine not found"));
         assertEquals(1, testMachineInfo.get("versionCount"));
     }
 
@@ -286,9 +289,9 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        var versions = consoleController.getVersions("test-machine");
+        List<cn.chedejun.statemachine.management.dto.MachineDefinitionDTO> versions = consoleController.getVersions("test-machine");
         assertFalse(versions.isEmpty());
-        var ver = versions.get(0);
+        cn.chedejun.statemachine.management.dto.MachineDefinitionDTO ver = versions.get(0);
         assertEquals("test-machine", ver.name());
         assertFalse(ver.states().isEmpty());
         assertFalse(ver.transitions().isEmpty());
@@ -300,11 +303,11 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        var result = consoleController.getInstances("test-machine", null, null, null, 0, 20);
+        Map<String, Object> result = consoleController.getInstances("test-machine", null, null, null, 0, 20);
         assertTrue((long) result.get("total") > 0);
-        var instances = (List<?>) result.get("instances");
+        List<?> instances = (List<?>) result.get("instances");
         assertFalse(instances.isEmpty());
-        var dto = (InstanceDTO) instances.get(0);
+        InstanceDTO dto = (InstanceDTO) instances.get(0);
         assertEquals("COMPLETED", dto.status());
     }
 
@@ -315,9 +318,9 @@ class StateMachineIntegrationTest {
         ExecuteResult result = testMachine.execute(new TestContext(), "biz-instance-detail");
         String instanceId = result.instanceId();
 
-        var detail = consoleController.getInstanceDetail(instanceId);
+        Map<String, Object> detail = consoleController.getInstanceDetail(instanceId);
         assertNotNull(detail.get("instance"));
-        var snapshots = (List<?>) detail.get("snapshots");
+        List<?> snapshots = (List<?>) detail.get("snapshots");
         assertFalse(snapshots.isEmpty());
         assertEquals("validate", ((SnapshotDTO) snapshots.get(0)).stateName());
     }
@@ -328,13 +331,13 @@ class StateMachineIntegrationTest {
         Assumptions.assumeTrue(consoleController != null);
         TestContext ctx = new TestContext();
         try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
-        var instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
+        List<cn.chedejun.statemachine.domain.data.InstanceData> instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
         String instanceId = instances.stream()
-            .filter(r -> r.status() == InstanceStatus.FAILED).findFirst().orElseThrow().id().value();
+            .filter(r -> r.status() == InstanceStatus.FAILED).findFirst().orElseThrow(() -> new AssertionError("No failed instance found")).id().value();
 
-        var result = consoleController.retryInstance(instanceId);
+        Map<String, String> result = consoleController.retryInstance(instanceId);
         assertTrue(result.get("message").contains("Re-execution"));
-        var updated = instanceRepository.findById(InstanceId.of(instanceId));
+        Optional<cn.chedejun.statemachine.domain.data.InstanceData> updated = instanceRepository.findById(InstanceId.of(instanceId));
         assertEquals(InstanceStatus.FAILED, updated.get().status());
     }
 
@@ -345,7 +348,7 @@ class StateMachineIntegrationTest {
     void actuatorEndpoint_listsMachines() {
         Assumptions.assumeTrue(endpoint != null);
         testMachine.execute(new TestContext(), "biz-console-api");
-        var machines = endpoint.listMachines();
+        List<cn.chedejun.statemachine.management.dto.MachineDTO> machines = endpoint.listMachines();
         assertFalse(machines.isEmpty());
     }
 
@@ -354,9 +357,9 @@ class StateMachineIntegrationTest {
     void actuatorEndpoint_getVersions() {
         Assumptions.assumeTrue(endpoint != null);
         testMachine.execute(new TestContext(), "biz-console-api");
-        var versions = endpoint.getVersions("test-machine");
+        List<cn.chedejun.statemachine.management.dto.MachineDefinitionDTO> versions = endpoint.getVersions("test-machine");
         assertFalse(versions.isEmpty());
-        var ver = versions.get(0);
+        cn.chedejun.statemachine.management.dto.MachineDefinitionDTO ver = versions.get(0);
         assertEquals("test-machine", ver.name());
     }
 
@@ -376,7 +379,7 @@ class StateMachineIntegrationTest {
 
         suspendMachine.resumeByBusinessId("test-biz-001", "wait-approval", c -> {});
 
-        var instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-001"));
+        Optional<cn.chedejun.statemachine.domain.data.InstanceData> instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-001"));
         assertTrue(instance.isPresent());
         assertEquals(InstanceStatus.COMPLETED, instance.get().status());
         assertEquals("complete", instance.get().currentState().value());
@@ -408,7 +411,7 @@ class StateMachineIntegrationTest {
             c.setProcessed(true);
         });
 
-        var instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-002"));
+        Optional<cn.chedejun.statemachine.domain.data.InstanceData> instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-002"));
         assertTrue(instance.isPresent());
         assertEquals(InstanceStatus.COMPLETED, instance.get().status());
     }
@@ -431,7 +434,7 @@ class StateMachineIntegrationTest {
         assertThrows(StateMachineException.class, () ->
             suspendMachine.resumeByBusinessId("test-biz-003", "wrong-state", c -> {}));
 
-        var instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-003"));
+        Optional<cn.chedejun.statemachine.domain.data.InstanceData> instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-003"));
         assertTrue(instance.isPresent());
         assertEquals(InstanceStatus.SUSPENDED, instance.get().status());
     }

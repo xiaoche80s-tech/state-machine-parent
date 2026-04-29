@@ -1,6 +1,7 @@
 package cn.chedejun.statemachine.application;
 
 import cn.chedejun.statemachine.core.*;
+import cn.chedejun.statemachine.domain.data.DefinitionData;
 import cn.chedejun.statemachine.domain.data.InstanceData;
 import cn.chedejun.statemachine.domain.data.SnapshotData;
 import cn.chedejun.statemachine.domain.engine.StateMachine;
@@ -80,12 +81,12 @@ public class InstanceExecutionService<C> {
         if (data.status() != InstanceStatus.FAILED)
             throw new StateMachineException("Can only retry FAILED instances, current status: " + data.status());
 
-        var snapshots = snapshotRepo.findByInstanceId(instanceId);
-        var lastFailed = snapshots.stream()
+        List<SnapshotData> snapshots = snapshotRepo.findByInstanceId(instanceId);
+        Optional<SnapshotData> lastFailed = snapshots.stream()
             .filter(s -> s.status() == ExecutionStatus.FAILED)
             .max(java.util.Comparator.comparing(SnapshotData::executedAt));
 
-        if (lastFailed.isEmpty())
+        if (!lastFailed.isPresent())
             throw new StateMachineException("No failed snapshot found for instance: " + instanceId);
 
         SnapshotData failedSnapshot = lastFailed.get();
@@ -93,7 +94,7 @@ public class InstanceExecutionService<C> {
 
         if (SNAPSHOT_TYPE_ROUTE.equals(failedSnapshot.snapshotType())) {
             Optional<String> nextState = machine.findNextState(context, data.currentState().value());
-            if (nextState.isEmpty())
+            if (!nextState.isPresent())
                 throw new StateMachineException("No matching transition found from state: " + data.currentState().value());
 
             String targetState = nextState.get();
@@ -121,7 +122,7 @@ public class InstanceExecutionService<C> {
             throw new StateMachineException(
                 String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
 
-        var snapshots = snapshotRepo.findByInstanceId(data.id());
+        List<SnapshotData> snapshots = snapshotRepo.findByInstanceId(data.id());
         String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
         C context = deserialize(contextJson, machine);
         contextMerger.accept(context);
@@ -170,7 +171,7 @@ public class InstanceExecutionService<C> {
             }
 
             Optional<String> nextState = machine.findNextState(context, currentStateName);
-            if (nextState.isEmpty()) {
+            if (!nextState.isPresent()) {
                 if (machine.hasOutgoingTransitions(currentStateName)) {
                     failWithTransitionError(instanceId, currentStateName, context, machine);
                 }
@@ -253,7 +254,7 @@ public class InstanceExecutionService<C> {
 
     @SuppressWarnings("unchecked")
     private C deserialize(String json, StateMachine<C> machine) {
-        String safe = json != null && !json.isBlank() ? json : "{}";
+        String safe = json != null && !json.trim().isEmpty() ? json : "{}";
         try { return (C) objectMapper.readValue(safe, machine.getContextClass()); } catch (Exception e) {
             throw new StateMachineException(String.format("Failed to deserialize context: %s", e.getMessage()), e);
         }
@@ -280,7 +281,7 @@ public class InstanceExecutionService<C> {
     }
 
     private DefinitionId resolveDefinitionId(StateMachine<C> machine) {
-        var definitions = definitionRepo.findAllByName(MachineName.of(machine.getName()));
+        List<DefinitionData> definitions = definitionRepo.findAllByName(MachineName.of(machine.getName()));
         if (definitions.isEmpty()) return DefinitionId.of(UNKNOWN_VERSION);
         return DefinitionId.of(definitions.get(0).id());
     }

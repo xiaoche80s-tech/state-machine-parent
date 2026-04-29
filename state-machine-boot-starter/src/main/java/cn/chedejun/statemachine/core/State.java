@@ -10,7 +10,7 @@ public class State<C> {
     }
 
     public State(String name, Action<C> action, boolean suspended) {
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("State name cannot be null or empty");
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("State name cannot be null or empty");
         this.name = name;
         this.action = action;
         this.suspended = suspended;

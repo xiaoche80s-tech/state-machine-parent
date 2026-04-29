@@ -11,6 +11,9 @@ import cn.chedejun.statemachine.domain.shared.InstanceId;
 import cn.chedejun.statemachine.domain.shared.InstanceStatus;
 import cn.chedejun.statemachine.domain.shared.MachineName;
 import cn.chedejun.statemachine.domain.shared.StateName;
+import cn.chedejun.statemachine.domain.data.DefinitionData;
+import cn.chedejun.statemachine.domain.data.InstanceData;
+import cn.chedejun.statemachine.domain.data.SnapshotData;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.MachineDefinitionDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Controller
 @RequestMapping("/statemachine")
@@ -49,14 +53,16 @@ public class ConsoleController {
     @GetMapping("/api/machines") @ResponseBody
     public List<Map<String, Object>> listMachines() {
         return registry.getMachineNames().stream().map(name -> {
-            var versions = registry.getVersions(name);
+            List<DefinitionData> versions = registry.getVersions(name);
             MachineName machineName = MachineName.of(name);
-            return Map.<String, Object>of(
-                "name", name, "versionCount", versions.size(),
-                "runningInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.RUNNING),
-                "failedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.FAILED),
-                "suspendedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.SUSPENDED));
-        }).toList();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("name", name);
+            result.put("versionCount", versions.size());
+            result.put("runningInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.RUNNING));
+            result.put("failedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.FAILED));
+            result.put("suspendedInstances", instanceRepository.countByMachineNameAndStatus(machineName, InstanceStatus.SUSPENDED));
+            return Collections.unmodifiableMap(result);
+        }).collect(Collectors.toList());
     }
 
     @GetMapping("/api/machines/{name}/versions") @ResponseBody
@@ -71,9 +77,9 @@ public class ConsoleController {
                     objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
                 return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), states, transitions, rp, r.registeredAt());
             } catch (Exception e) {
-                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), r.registeredAt());
             }
-        }).toList();
+        }).collect(Collectors.toList());
     }
 
     @GetMapping("/api/machines/{name}/instances") @ResponseBody
@@ -89,48 +95,73 @@ public class ConsoleController {
         InstanceId instanceIdObj = instanceId != null && !instanceId.isEmpty() ? InstanceId.of(instanceId) : null;
 
         boolean hasFilters = statusEnum != null || businessIdObj != null || instanceIdObj != null;
-        var records = hasFilters
+        List<InstanceData> records = hasFilters
             ? instanceRepository.findByMachineNameWithFilters(machineName, statusEnum, businessIdObj, instanceIdObj, page * size, size)
             : instanceRepository.findByMachineName(machineName, page * size, size);
         long total = hasFilters
             ? instanceRepository.countByMachineNameWithFilters(machineName, statusEnum, businessIdObj, instanceIdObj)
             : instanceRepository.countByMachineNameWithFilters(machineName, null, null, null);
-        var dtos = records.stream().map(r -> new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
-            r.currentState().value(), r.status().name(), r.businessId() != null ? r.businessId().value() : null, r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).toList();
-        return Map.of("instances", dtos, "total", total, "page", page, "size", size);
+        List<InstanceDTO> dtos = records.stream().map(r -> new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
+            r.currentState().value(), r.status().name(), r.businessId() != null ? r.businessId().value() : null, r.retryCount(), r.errorMessage(), r.createdAt(), r.updatedAt())).collect(Collectors.toList());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("instances", dtos);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("size", size);
+        return Collections.unmodifiableMap(result);
     }
 
     @GetMapping("/api/instances/{id}") @ResponseBody
     public Map<String, Object> getInstanceDetail(@PathVariable String id) {
-        var inst = instanceRepository.findById(InstanceId.of(id));
-        if (inst.isEmpty()) return Map.of("error", "Instance not found");
-        var snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
+        Optional<InstanceData> inst = instanceRepository.findById(InstanceId.of(id));
+        if (!inst.isPresent()) {
+            Map<String, String> err = new LinkedHashMap<>();
+            err.put("error", "Instance not found");
+            return Collections.unmodifiableMap(err);
+        }
+        List<SnapshotDTO> snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
             .map(s -> new SnapshotDTO(s.id().value(), s.stateName().value(), s.inputJson(), s.outputJson(),
-                s.status().name(), s.errorMessage(), s.attempt(), s.snapshotType(), s.executedAt())).toList();
-        var r = inst.get();
-        var dto = new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
+                s.status().name(), s.errorMessage(), s.attempt(), s.snapshotType(), s.executedAt())).collect(Collectors.toList());
+        InstanceData r = inst.get();
+        InstanceDTO dto = new InstanceDTO(r.id().value(), r.machineName().value(), r.definitionVersion(),
             r.currentState().value(), r.status().name(), r.businessId() != null ? r.businessId().value() : null, r.retryCount(),
             r.errorMessage(), r.createdAt(), r.updatedAt());
-        return Map.of("instance", dto, "snapshots", snaps);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("instance", dto);
+        result.put("snapshots", snaps);
+        return Collections.unmodifiableMap(result);
     }
 
     @PostMapping("/api/instances/{id}/resume") @ResponseBody
     public Map<String, Object> resumeInstance(@PathVariable String id,
             @RequestBody Map<String, String> params) {
-        var inst = instanceRepository.findById(InstanceId.of(id));
-        if (inst.isEmpty()) return Map.of("success", false, "error", "Instance not found");
-        String expectedState = params.get("expectedCurrentState");
-        if (expectedState == null || expectedState.isBlank()) {
-            return Map.of("success", false, "error", "Missing expectedCurrentState");
+        Optional<InstanceData> inst = instanceRepository.findById(InstanceId.of(id));
+        if (!inst.isPresent()) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("error", "Instance not found");
+            return Collections.unmodifiableMap(err);
         }
-        var machineOpt = registry.getLatest(inst.get().machineName().value());
-        if (machineOpt.isEmpty()) return Map.of("success", false, "error", "State machine not found: " + inst.get().machineName().value());
+        String expectedState = params.get("expectedCurrentState");
+        if (expectedState == null || expectedState.trim().isEmpty()) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("error", "Missing expectedCurrentState");
+            return Collections.unmodifiableMap(err);
+        }
+        Optional<? extends StateMachine<?>> machineOpt = registry.getLatest(inst.get().machineName().value());
+        if (!machineOpt.isPresent()) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("error", "State machine not found: " + inst.get().machineName().value());
+            return Collections.unmodifiableMap(err);
+        }
         try {
             String contextJson = params.get("contextJson");
             @SuppressWarnings("unchecked")
             StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
 
-            if (contextJson != null && !contextJson.isBlank()) {
+            if (contextJson != null && !contextJson.trim().isEmpty()) {
                 final String cj = contextJson;
                 executionService.resumeByInstanceId(m, InstanceId.of(id),
                     StateName.of(expectedState), ctx -> {
@@ -145,30 +176,48 @@ public class ConsoleController {
                 executionService.resumeByInstanceId(m, InstanceId.of(id),
                     StateName.of(expectedState), c -> {});
             }
-            var updated = instanceRepository.findById(InstanceId.of(id));
-            return Map.of("success", true, "message", "已恢复执行", "currentState",
-                updated.map(i -> i.currentState().value()).orElse("unknown"));
+            Optional<InstanceData> updated = instanceRepository.findById(InstanceId.of(id));
+            Map<String, Object> success = new LinkedHashMap<>();
+            success.put("success", true);
+            success.put("message", "已恢复执行");
+            success.put("currentState", updated.map(i -> i.currentState().value()).orElse("unknown"));
+            return Collections.unmodifiableMap(success);
         } catch (Exception e) {
             log.error("[state-machine] 恢复实例失败 id={}", id, e);
-            return Map.of("success", false, "error", e.getMessage());
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("success", false);
+            err.put("error", e.getMessage());
+            return Collections.unmodifiableMap(err);
         }
     }
 
     @PostMapping("/api/instances/{id}/retry") @ResponseBody
     public Map<String, String> retryInstance(@PathVariable String id) {
-        var inst = instanceRepository.findById(InstanceId.of(id));
-        if (inst.isEmpty()) return Map.of("error", "Instance not found");
-        var machineOpt = registry.getLatest(inst.get().machineName().value());
-        if (machineOpt.isEmpty()) return Map.of("error", "State machine not found: " + inst.get().machineName().value());
+        Optional<InstanceData> inst = instanceRepository.findById(InstanceId.of(id));
+        if (!inst.isPresent()) {
+            Map<String, String> err = new LinkedHashMap<>();
+            err.put("error", "Instance not found");
+            return Collections.unmodifiableMap(err);
+        }
+        Optional<? extends StateMachine<?>> machineOpt = registry.getLatest(inst.get().machineName().value());
+        if (!machineOpt.isPresent()) {
+            Map<String, String> err = new LinkedHashMap<>();
+            err.put("error", "State machine not found: " + inst.get().machineName().value());
+            return Collections.unmodifiableMap(err);
+        }
         try {
             @SuppressWarnings("unchecked")
             StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
             executionService.retry(m, InstanceId.of(id));
-            var updated = instanceRepository.findById(InstanceId.of(id));
-            return Map.of("message", "Instance re-executed from state: " + updated.map(i -> i.currentState().value()).orElse("unknown"));
+            Optional<InstanceData> updated = instanceRepository.findById(InstanceId.of(id));
+            Map<String, String> result = new LinkedHashMap<>();
+            result.put("message", "Instance re-executed from state: " + updated.map(i -> i.currentState().value()).orElse("unknown"));
+            return Collections.unmodifiableMap(result);
         } catch (Exception e) {
             log.error("[state-machine] 重试实例失败 id={}", id, e);
-            return Map.of("message", "Re-execution failed: " + e.getMessage());
+            Map<String, String> result = new LinkedHashMap<>();
+            result.put("message", "Re-execution failed: " + e.getMessage());
+            return Collections.unmodifiableMap(result);
         }
     }
 
