@@ -24,6 +24,8 @@ import java.util.function.Consumer;
 public class InstanceExecutionService<C> {
 
     private static final Logger log = LoggerFactory.getLogger(InstanceExecutionService.class);
+    private static final String SNAPSHOT_TYPE_ROUTE = "ROUTE";
+    private static final String UNKNOWN_VERSION = "unknown";
     private final InstanceRepository instanceRepo;
     private final SnapshotRepository snapshotRepo;
     private final DefinitionRepository definitionRepo;
@@ -45,14 +47,13 @@ public class InstanceExecutionService<C> {
         instance.setDefinitionId(definitionId);
         instanceRepo.save(toData(instance));
 
-        String initialState = machine.getStates().get(0).getName();
-        executeLoop(instanceId, context, initialState, machine);
+        StateName initialState = StateName.of(machine.getStates().get(0).getName());
+        InstanceData finalData = executeLoop(instanceId, context, initialState, machine);
 
-        InstanceData saved = requireInstance(instanceId);
         return new ExecuteResult(
-            saved.id().value(), machine.getName(), machine.getVersion(),
-            saved.currentState().value(), saved.status().name(),
-            saved.errorMessage(), businessId.value(), saved.createdAt());
+            finalData.id().value(), machine.getName(), machine.getVersion(),
+            finalData.currentState().value(), finalData.status().name(),
+            finalData.errorMessage(), businessId.value(), finalData.createdAt());
     }
 
     public void resumeByBusinessId(StateMachine<C> machine, BusinessId businessId,
@@ -65,25 +66,17 @@ public class InstanceExecutionService<C> {
 
     public void resumeByInstanceId(StateMachine<C> machine, InstanceId instanceId,
                                     StateName expectedState, Consumer<C> contextMerger) {
-        InstanceData data = instanceRepo.findById(instanceId)
-            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        InstanceData data = requireInstance(instanceId);
         resume(data, machine, expectedState, contextMerger);
     }
 
     public void retryWithCustomContext(StateMachine<C> machine, InstanceId instanceId, C context) {
-        InstanceData data = instanceRepo.findById(instanceId)
-            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
-        if (data.status() != InstanceStatus.FAILED)
-            throw new StateMachineException("Can only retry FAILED instances, current status: " + data.status());
-
-        instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.RUNNING, null)
-            .withIncrementedRetry(0, null));
-        executeLoop(instanceId, context, data.currentState().value(), machine);
+        InstanceData data = requireInstance(instanceId);
+        resetToRunningAndExecute(data, context, data.currentState().value(), machine);
     }
 
     public void retry(StateMachine<C> machine, InstanceId instanceId) {
-        InstanceData data = instanceRepo.findById(instanceId)
-            .orElseThrow(() -> new StateMachineException("Instance not found: " + instanceId));
+        InstanceData data = requireInstance(instanceId);
         if (data.status() != InstanceStatus.FAILED)
             throw new StateMachineException("Can only retry FAILED instances, current status: " + data.status());
 
@@ -96,9 +89,9 @@ public class InstanceExecutionService<C> {
             throw new StateMachineException("No failed snapshot found for instance: " + instanceId);
 
         SnapshotData failedSnapshot = lastFailed.get();
-        C context = deserialize(failedSnapshot.inputJson() != null ? failedSnapshot.inputJson() : "{}", machine);
+        C context = deserialize(failedSnapshot.inputJson(), machine);
 
-        if ("ROUTE".equals(failedSnapshot.snapshotType())) {
+        if (SNAPSHOT_TYPE_ROUTE.equals(failedSnapshot.snapshotType())) {
             Optional<String> nextState = machine.findNextState(context, data.currentState().value());
             if (nextState.isEmpty())
                 throw new StateMachineException("No matching transition found from state: " + data.currentState().value());
@@ -112,15 +105,11 @@ public class InstanceExecutionService<C> {
                 StateName.of(data.currentState().value()),
                 serialize(context), StateName.of(targetState)));
 
-            instanceRepo.save(data.withUpdatedState(StateName.of(targetState), InstanceStatus.RUNNING, null)
-                .withIncrementedRetry(0, null));
-            executeLoop(instanceId, context, targetState, machine);
+            resetToRunningAndExecute(data, context, targetState, machine);
             return;
         }
 
-        instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.RUNNING, null)
-            .withIncrementedRetry(0, null));
-        executeLoop(instanceId, context, data.currentState().value(), machine);
+        resetToRunningAndExecute(data, context, data.currentState().value(), machine);
     }
 
     /**
@@ -134,7 +123,7 @@ public class InstanceExecutionService<C> {
 
         var snapshots = snapshotRepo.findByInstanceId(data.id());
         String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
-        C context = deserialize(contextJson != null ? contextJson : "{}", machine);
+        C context = deserialize(contextJson, machine);
         contextMerger.accept(context);
 
         Optional<String> nextState = machine.findNextState(context, data.currentState().value());
@@ -142,8 +131,9 @@ public class InstanceExecutionService<C> {
             int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
             if (updated == 0)
                 throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
-            instanceRepo.save(data.withUpdatedState(StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
-            executeLoop(data.id(), context, nextState.get(), machine);
+            String nextStateName = nextState.get();
+            instanceRepo.save(data.withUpdatedState(StateName.of(nextStateName), InstanceStatus.RUNNING, null));
+            executeLoop(data.id(), context, StateName.of(nextStateName), machine);
         } else {
             if (machine.hasOutgoingTransitions(data.currentState().value())) {
                 String errorMsg = buildTransitionError(data.currentState().value(), machine.getTransitions());
@@ -157,10 +147,11 @@ public class InstanceExecutionService<C> {
 
     /**
      * 核心执行循环：查找状态 → 执行 Action → 路由到下一个状态
+     * @return 最终的 InstanceData
      */
-    private void executeLoop(InstanceId instanceId, C context, String startState, StateMachine<C> machine) {
+    private InstanceData executeLoop(InstanceId instanceId, C context, StateName startState, StateMachine<C> machine) {
         InstanceData current = requireInstance(instanceId);
-        String currentStateName = startState;
+        String currentStateName = startState.value();
         int maxIterations = machine.getStates().size() * (machine.getRetryPolicy().getMaxAttempts() + 1) + 1;
 
         for (int iteration = 1; iteration <= maxIterations; iteration++) {
@@ -175,22 +166,15 @@ public class InstanceExecutionService<C> {
             current = executeAction(current, state, context, machine);
 
             if (state.isSuspended()) {
-                current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.SUSPENDED, null));
-                return;
+                return instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.SUSPENDED, null));
             }
 
             Optional<String> nextState = machine.findNextState(context, currentStateName);
             if (nextState.isEmpty()) {
                 if (machine.hasOutgoingTransitions(currentStateName)) {
-                    String errorMsg = buildTransitionError(currentStateName, machine.getTransitions());
-                    snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
-                        SnapshotId.generate(), instanceId, StateName.of(currentStateName),
-                        serialize(context), errorMsg));
-                    current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.FAILED, errorMsg));
-                    throw new StateMachineException(errorMsg);
+                    failWithTransitionError(instanceId, currentStateName, context, machine);
                 }
-                current = instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.COMPLETED, null));
-                return;
+                return instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.COMPLETED, null));
             }
 
             snapshotRepo.save(ExecutionSnapshot.createRoute(
@@ -269,9 +253,25 @@ public class InstanceExecutionService<C> {
 
     @SuppressWarnings("unchecked")
     private C deserialize(String json, StateMachine<C> machine) {
-        try { return (C) objectMapper.readValue(json, machine.getContextClass()); } catch (Exception e) {
+        String safe = json != null && !json.isBlank() ? json : "{}";
+        try { return (C) objectMapper.readValue(safe, machine.getContextClass()); } catch (Exception e) {
             throw new StateMachineException(String.format("Failed to deserialize context: %s", e.getMessage()), e);
         }
+    }
+
+    private void resetToRunningAndExecute(InstanceData data, C context, String startState, StateMachine<C> machine) {
+        instanceRepo.save(data.withUpdatedState(StateName.of(startState), InstanceStatus.RUNNING, null)
+            .withIncrementedRetry(0, null));
+        executeLoop(data.id(), context, StateName.of(startState), machine);
+    }
+
+    private void failWithTransitionError(InstanceId instanceId, String currentStateName, C context, StateMachine<C> machine) {
+        String errorMsg = buildTransitionError(currentStateName, machine.getTransitions());
+        snapshotRepo.save(ExecutionSnapshot.createRouteFailed(
+            SnapshotId.generate(), instanceId, StateName.of(currentStateName),
+            serialize(context), errorMsg));
+        instanceRepo.save(requireInstance(instanceId).withUpdatedState(StateName.of(currentStateName), InstanceStatus.FAILED, errorMsg));
+        throw new StateMachineException(errorMsg);
     }
 
     private InstanceData requireInstance(InstanceId instanceId) {
@@ -281,15 +281,15 @@ public class InstanceExecutionService<C> {
 
     private DefinitionId resolveDefinitionId(StateMachine<C> machine) {
         var definitions = definitionRepo.findAllByName(MachineName.of(machine.getName()));
-        if (definitions.isEmpty()) return DefinitionId.of("unknown");
+        if (definitions.isEmpty()) return DefinitionId.of(UNKNOWN_VERSION);
         return DefinitionId.of(definitions.get(0).id());
     }
 
     private InstanceData toData(StateMachineInstance instance) {
         return new InstanceData(
             instance.id(), instance.definitionId(), instance.machineName(),
-            "unknown", instance.currentState(), instance.businessId(),
+            UNKNOWN_VERSION, instance.currentState(), instance.businessId(),
             instance.status(), instance.retryCount(), null, instance.errorMessage(),
-            java.time.Instant.now(), java.time.Instant.now());
+            Instant.now(), Instant.now());
     }
 }
