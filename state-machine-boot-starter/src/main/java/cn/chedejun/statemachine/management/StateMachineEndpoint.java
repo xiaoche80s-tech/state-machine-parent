@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
 import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
 import cn.chedejun.statemachine.domain.repository.InstanceRepository;
+import cn.chedejun.statemachine.domain.data.DefinitionData;
+import cn.chedejun.statemachine.domain.data.InstanceData;
 import cn.chedejun.statemachine.domain.shared.InstanceId;
 import cn.chedejun.statemachine.domain.shared.InstanceStatus;
 import cn.chedejun.statemachine.domain.shared.MachineName;
@@ -35,7 +37,7 @@ public class StateMachineEndpoint {
     @ReadOperation
     public List<MachineDTO> listMachines() {
         return registry.getMachineNames().stream().map(name -> {
-            var versions = definitionRepository.findAllByName(MachineName.of(name));
+            List<DefinitionData> versions = definitionRepository.findAllByName(MachineName.of(name));
             long running = 0, failed = 0;
             if (instanceRepository != null) {
                 running = instanceRepository.countByMachineNameAndStatus(MachineName.of(name), InstanceStatus.RUNNING);
@@ -58,7 +60,7 @@ public class StateMachineEndpoint {
                 return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), states, transitions, rp, r.registeredAt());
             } catch (Exception e) {
                 log.warn("[state-machine] 解析状态机定义失败 {}", name, e);
-                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), List.of(), List.of(), Map.of(), r.registeredAt());
+                return new MachineDefinitionDTO(r.id(), r.name().value(), r.version(), Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), r.registeredAt());
             }
         }).toList();
     }
@@ -66,7 +68,7 @@ public class StateMachineEndpoint {
     @WriteOperation
     public String retryInstance(@Selector String name, @Selector String instanceId) {
         if (instanceRepository == null) return "Instance repository not available";
-        var instance = instanceRepository.findById(InstanceId.of(instanceId));
+        Optional<InstanceData> instance = instanceRepository.findById(InstanceId.of(instanceId));
         if (instance.isEmpty()) return "Instance not found: " + instanceId;
         if (instance.get().status() != InstanceStatus.FAILED) return "Instance is not FAILED, current status: " + instance.get().status();
         return "Instance reset to RUNNING. Call stateMachine.retry(instanceId, newContext) to re-execute.";

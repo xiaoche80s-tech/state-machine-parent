@@ -38,12 +38,12 @@ class ConditionFailureDemoTest {
     @Test
     void conditionFalse_onInventoryCheck_routesToNotifyShortage() {
         OrderContext ctx = new OrderContext("ORD-ZERO", 0, 99.0);
-        var result = orderMachine.execute(ctx, "ORD-ZERO");
+        cn.chedejun.statemachine.core.ExecuteResult result = orderMachine.execute(ctx, "ORD-ZERO");
         String instanceId = result.instanceId();
 
         assertNotNull(instanceId);
         // 当前状态应为终态 notify-shortage（无 outgoing transition）
-        var inst = jdbcTemplate.queryForList(
+        java.util.Map<String, Object> inst = jdbcTemplate.queryForList(
             "SELECT current_state, status FROM state_machine_instances WHERE id = ?", instanceId).get(0);
         assertEquals("notify-shortage", inst.get("current_state"));
         assertEquals("COMPLETED", inst.get("status"));
@@ -60,11 +60,11 @@ class ConditionFailureDemoTest {
         ctx.setRouteFailed(false);
         ctx.setShippingAddress("北京市朝阳区");
 
-        var result = orderMachine.execute(ctx, "ORD-OK");
+        cn.chedejun.statemachine.core.ExecuteResult result = orderMachine.execute(ctx, "ORD-OK");
         String instanceId = result.instanceId();
 
         assertNotNull(instanceId);
-        var inst = jdbcTemplate.queryForList(
+        java.util.Map<String, Object> inst = jdbcTemplate.queryForList(
             "SELECT current_state, status FROM state_machine_instances WHERE id = ?", instanceId).get(0);
         String currentState = (String) inst.get("current_state");
         String status = (String) inst.get("status");
@@ -88,11 +88,11 @@ class ConditionFailureDemoTest {
         OrderContext ctx = new OrderContext("ORD-ROUTE-FAIL", 10, 99.0);
         ctx.setPaymentSuccess(true);
         ctx.setRouteFailed(true);
-        var result = orderMachine.execute(ctx, "ORD-ROUTE-FAIL");
+        cn.chedejun.statemachine.core.ExecuteResult result = orderMachine.execute(ctx, "ORD-ROUTE-FAIL");
         String instanceId = result.instanceId();
 
         assertNotNull(instanceId);
-        var inst = jdbcTemplate.queryForList(
+        java.util.Map<String, Object> inst = jdbcTemplate.queryForList(
             "SELECT current_state, status FROM state_machine_instances WHERE id = ?", instanceId).get(0);
         assertEquals("order-failed", inst.get("current_state"));
         assertEquals("COMPLETED", inst.get("status"));

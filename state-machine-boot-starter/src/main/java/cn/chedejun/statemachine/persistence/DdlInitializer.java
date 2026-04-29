@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import javax.sql.DataSource;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 public class DdlInitializer {
@@ -26,7 +27,7 @@ public class DdlInitializer {
             JdbcTemplate template = new JdbcTemplate(dataSource);
             String dbType = detectDbType(template);
             String resourcePath = "/ddl/" + dbType + ".sql";
-            var stream = getClass().getResourceAsStream(resourcePath);
+            InputStream stream = getClass().getResourceAsStream(resourcePath);
             if (stream == null) {
                 log.warn("[state-machine] 数据库 '{}' 无 DDL 脚本，回退使用 H2", dbType);
                 stream = getClass().getResourceAsStream("/ddl/h2.sql");

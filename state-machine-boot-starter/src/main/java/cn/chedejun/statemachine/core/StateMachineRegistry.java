@@ -47,11 +47,12 @@ public class StateMachineRegistry {
             }).toList();
         String retryPolicyJson;
         try {
-            retryPolicyJson = objectMapper.writeValueAsString(Map.of(
-                "maxAttempts", machine.getRetryPolicy().getMaxAttempts(),
-                "initialDelayMs", machine.getRetryPolicy().getInitialDelayMs(),
-                "maxDelayMs", machine.getRetryPolicy().getMaxDelayMs(),
-                "backoffFactor", machine.getRetryPolicy().getBackoffFactor()));
+            Map<String, Object> retryPolicy = new LinkedHashMap<>();
+            retryPolicy.put("maxAttempts", machine.getRetryPolicy().getMaxAttempts());
+            retryPolicy.put("initialDelayMs", machine.getRetryPolicy().getInitialDelayMs());
+            retryPolicy.put("maxDelayMs", machine.getRetryPolicy().getMaxDelayMs());
+            retryPolicy.put("backoffFactor", machine.getRetryPolicy().getBackoffFactor());
+            retryPolicyJson = objectMapper.writeValueAsString(Collections.unmodifiableMap(retryPolicy));
         } catch (Exception e) {
             log.warn("[state-machine] 序列化状态机重试策略失败 {}:{}", name, version, e);
             retryPolicyJson = "{}";
