@@ -116,9 +116,10 @@ public class StateMachineAutoConfiguration {
         public cn.chedejun.statemachine.management.StateMachineEndpoint stateMachineEndpoint(
                 StateMachineRegistry registry,
                 InstanceRepository instanceRepository,
-                DefinitionRepository definitionRepository) {
+                DefinitionRepository definitionRepository,
+                ObjectMapper objectMapper) {
             log.info("[state-machine] 管理端点已启用");
-            return new cn.chedejun.statemachine.management.StateMachineEndpoint(registry, instanceRepository, definitionRepository);
+            return new cn.chedejun.statemachine.management.StateMachineEndpoint(registry, instanceRepository, definitionRepository, objectMapper);
         }
     }
 
@@ -131,10 +132,11 @@ public class StateMachineAutoConfiguration {
                 StateMachineRegistry registry,
                 InstanceRepository instanceRepository,
                 SnapshotRepository snapshotRepository,
-                InstanceExecutionService<Object> executionService) {
+                InstanceExecutionService<Object> executionService,
+                ObjectMapper objectMapper) {
             log.info("[state-machine] 控制台已启用 /statemachine");
             return new cn.chedejun.statemachine.management.ConsoleController(
-                registry, instanceRepository, snapshotRepository, executionService);
+                registry, instanceRepository, snapshotRepository, executionService, objectMapper);
         }
     }
 }

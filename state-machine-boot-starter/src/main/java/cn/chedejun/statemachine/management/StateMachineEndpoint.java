@@ -25,14 +25,16 @@ public class StateMachineEndpoint {
     private final StateMachineRegistry registry;
     private final InstanceRepository instanceRepository;
     private final DefinitionRepository definitionRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public StateMachineEndpoint(StateMachineRegistry registry,
                                  InstanceRepository instanceRepository,
-                                 DefinitionRepository definitionRepository) {
+                                 DefinitionRepository definitionRepository,
+                                 ObjectMapper objectMapper) {
         this.registry = registry;
         this.instanceRepository = instanceRepository;
         this.definitionRepository = definitionRepository;
+        this.objectMapper = objectMapper;
     }
 
     @ReadOperation

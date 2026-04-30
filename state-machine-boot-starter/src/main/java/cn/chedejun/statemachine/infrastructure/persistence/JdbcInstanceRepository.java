@@ -45,7 +45,25 @@ public class JdbcInstanceRepository implements InstanceRepository {
 
     @Override
     public InstanceData save(InstanceData instance) {
-        if (findById(instance.id()).isPresent()) {
+        try {
+            jdbcTemplate.update(
+                "INSERT INTO state_machine_instances (id, definition_id, machine_name, definition_version, " +
+                "current_state, business_id, status, retry_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ps -> {
+                    int i = 1;
+                    ps.setString(i++, instance.id().value());
+                    ps.setString(i++, instance.definitionId().value());
+                    ps.setString(i++, instance.machineName().value());
+                    ps.setString(i++, instance.definitionVersion());
+                    ps.setString(i++, instance.currentState().value());
+                    ps.setString(i++, instance.businessId().value());
+                    ps.setString(i++, instance.status().name());
+                    ps.setInt(i++, instance.retryCount());
+                    ps.setTimestamp(i++, Timestamp.from(instance.createdAt()));
+                    ps.setTimestamp(i++, Timestamp.from(instance.updatedAt()));
+                });
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 主键已存在，执行 UPDATE（原子化 upsert，避免先查后写的并发竞态）
             jdbcTemplate.update(
                 "UPDATE state_machine_instances SET definition_id=?, machine_name=?, definition_version=?, " +
                 "current_state=?, business_id=?, status=?, retry_count=?, next_retry_at=?, error_message=?, updated_at=CURRENT_TIMESTAMP " +
@@ -64,32 +82,15 @@ public class JdbcInstanceRepository implements InstanceRepository {
                     ps.setString(i++, instance.errorMessage());
                     ps.setString(i++, instance.id().value());
                 });
-        } else {
-            jdbcTemplate.update(
-                "INSERT INTO state_machine_instances (id, definition_id, machine_name, definition_version, " +
-                "current_state, business_id, status, retry_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ps -> {
-                    int i = 1;
-                    ps.setString(i++, instance.id().value());
-                    ps.setString(i++, instance.definitionId().value());
-                    ps.setString(i++, instance.machineName().value());
-                    ps.setString(i++, instance.definitionVersion());
-                    ps.setString(i++, instance.currentState().value());
-                    ps.setString(i++, instance.businessId().value());
-                    ps.setString(i++, instance.status().name());
-                    ps.setInt(i++, instance.retryCount());
-                    ps.setTimestamp(i++, Timestamp.from(instance.createdAt()));
-                    ps.setTimestamp(i++, Timestamp.from(instance.updatedAt()));
-                });
         }
         return instance;
     }
 
     @Override
-    public int tryMarkRunningFromSuspended(InstanceId id) {
+    public int tryMarkRunningFromSuspended(InstanceId id, StateName nextState) {
         return jdbcTemplate.update(
-            "UPDATE state_machine_instances SET status='RUNNING', updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='SUSPENDED'",
-            id.value());
+            "UPDATE state_machine_instances SET status='RUNNING', current_state=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='SUSPENDED'",
+            nextState.value(), id.value());
     }
 
     @Override

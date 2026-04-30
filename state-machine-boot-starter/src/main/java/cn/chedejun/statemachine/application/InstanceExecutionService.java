@@ -48,7 +48,7 @@ public class InstanceExecutionService<C> {
         instance.setDefinitionId(definitionId);
         instanceRepo.save(toData(instance));
 
-        StateName initialState = StateName.of(machine.getStates().get(0).getName());
+        StateName initialState = StateName.of(machine.getInitialState().getName());
         InstanceData finalData = executeLoop(instanceId, context, initialState, machine);
 
         return new ExecuteResult(
@@ -123,17 +123,22 @@ public class InstanceExecutionService<C> {
                 String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
 
         List<SnapshotData> snapshots = snapshotRepo.findByInstanceId(data.id());
-        String contextJson = snapshots.isEmpty() ? "{}" : snapshots.get(snapshots.size() - 1).outputJson();
+        // 修复：只取 SUCCESS 类型的 NODE 快照（ROUTE 快照的 outputJson 是目标状态名而非上下文 JSON）
+        String contextJson = snapshots.stream()
+            .filter(s -> s.status() == ExecutionStatus.SUCCESS && !SNAPSHOT_TYPE_ROUTE.equals(s.snapshotType()))
+            .reduce((first, second) -> second)
+            .map(SnapshotData::outputJson)
+            .orElse("{}");
         C context = deserialize(contextJson, machine);
         contextMerger.accept(context);
 
         Optional<String> nextState = machine.findNextState(context, data.currentState().value());
         if (nextState.isPresent()) {
-            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id());
+            String nextStateName = nextState.get();
+            // 修复：将 CAS 和状态更新合并为单次原子 SQL，避免之前冗余的 save() 绕过了乐观锁
+            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id(), StateName.of(nextStateName));
             if (updated == 0)
                 throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
-            String nextStateName = nextState.get();
-            instanceRepo.save(data.withUpdatedState(StateName.of(nextStateName), InstanceStatus.RUNNING, null));
             executeLoop(data.id(), context, StateName.of(nextStateName), machine);
         } else {
             if (machine.hasOutgoingTransitions(data.currentState().value())) {
@@ -189,16 +194,17 @@ public class InstanceExecutionService<C> {
 
     /**
      * 执行单个状态的 Action，记录成功/失败快照，处理重试逻辑
-     * @return 更新后的 InstanceData（成功）或 null（挂起后不应继续）
+     * attempt 直接由 current.retryCount()+1 推导，避免每次重试都查询全量快照（N+1 问题）
+     * @return 更新后的 InstanceData
      */
     private InstanceData executeAction(InstanceData current, State<C> state, C context,
                                         StateMachine<C> machine) {
         String stateName = state.getName();
-        String inputJson = serialize(context);
         int maxAttempts = machine.getRetryPolicy().getMaxAttempts();
 
         while (true) {
-            int attempt = getCurrentAttempt(stateName, current.id());
+            int attempt = current.retryCount() + 1;
+            String inputJson = serialize(context);
             try {
                 state.getAction().execute(context);
                 snapshotRepo.save(ExecutionSnapshot.createSuccess(
@@ -228,13 +234,6 @@ public class InstanceExecutionService<C> {
                     String.format("State '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
             }
         }
-    }
-
-    private int getCurrentAttempt(String stateName, InstanceId instanceId) {
-        return snapshotRepo.findByInstanceId(instanceId).stream()
-            .filter(s -> s.stateName().value().equals(stateName))
-            .mapToInt(SnapshotData::attempt)
-            .max().orElse(0) + 1;
     }
 
     private String buildTransitionError(String stateName, List<? extends Transition> transitions) {

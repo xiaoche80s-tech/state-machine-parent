@@ -29,6 +29,8 @@ import java.util.stream.Collectors;
 public class ConsoleController {
     private static final Logger log = LoggerFactory.getLogger(ConsoleController.class);
 
+    private static final int MAX_PAGE_SIZE = 200;
+
     @GetMapping({"", "/"})
     public String index() {
         return "forward:/statemachine/index.html";
@@ -37,17 +39,19 @@ public class ConsoleController {
     private final InstanceRepository instanceRepository;
     private final SnapshotRepository snapshotRepository;
     private final InstanceExecutionService<Object> executionService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     @SuppressWarnings("unchecked")
     public ConsoleController(StateMachineRegistry registry,
                               InstanceRepository instanceRepository,
                               SnapshotRepository snapshotRepository,
-                              InstanceExecutionService<Object> executionService) {
+                              InstanceExecutionService<Object> executionService,
+                              ObjectMapper objectMapper) {
         this.registry = registry;
         this.instanceRepository = instanceRepository;
         this.snapshotRepository = snapshotRepository;
         this.executionService = executionService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/api/machines") @ResponseBody
@@ -89,8 +93,20 @@ public class ConsoleController {
             @RequestParam(required = false) String instanceId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        // 校验 size 上限，防止恐怔性请求拉取全量数据
+        size = Math.min(size, MAX_PAGE_SIZE);
         MachineName machineName = MachineName.of(name);
-        InstanceStatus statusEnum = status != null && !status.isEmpty() ? InstanceStatus.valueOf(status) : null;
+        // 校验 status 参数，非法值返回 400 而非 500
+        InstanceStatus statusEnum = null;
+        if (status != null && !status.isEmpty()) {
+            try {
+                statusEnum = InstanceStatus.valueOf(status);
+            } catch (IllegalArgumentException e) {
+                Map<String, Object> err = new LinkedHashMap<>();
+                err.put("error", "Invalid status value: " + status + ". Valid values: RUNNING, COMPLETED, FAILED, SUSPENDED");
+                return Collections.unmodifiableMap(err);
+            }
+        }
         BusinessId businessIdObj = businessId != null && !businessId.isEmpty() ? BusinessId.of(businessId) : null;
         InstanceId instanceIdObj = instanceId != null && !instanceId.isEmpty() ? InstanceId.of(instanceId) : null;
 

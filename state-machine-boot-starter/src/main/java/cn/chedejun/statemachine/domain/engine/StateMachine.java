@@ -51,6 +51,11 @@ public class StateMachine<C> {
         return states.stream().filter(s -> s.getName().equals(name)).findFirst();
     }
 
+    /** 返回初始状态（即按顺序添加的第一个状态）。由于构造旹法已检验 states 非空，此方法必然有返回値。 */
+    public State<C> getInitialState() {
+        return states.get(0);
+    }
+
     public boolean hasState(StateName stateName) {
         return states.stream().anyMatch(s -> s.getName().equals(stateName.value()));
     }
