@@ -18,6 +18,7 @@ import java.util.Optional;
 public class JdbcSnapshotRepository implements SnapshotRepository {
     private static final Logger log = LoggerFactory.getLogger(JdbcSnapshotRepository.class);
     private final JdbcTemplate jdbcTemplate;
+    private volatile Boolean postgresql;
 
     public JdbcSnapshotRepository(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
 
@@ -31,8 +32,8 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
     @Override
     public SnapshotData save(ExecutionSnapshot snapshot) {
         jdbcTemplate.update(
-            "INSERT INTO state_machine_snapshots (id, instance_id, state_name, input, output, status, error_message, attempt, snapshot_type) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO state_machine_snapshots (id, instance_id, state_name, input, output, status, error_message, attempt, snapshot_type, executed_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ps -> {
                 int i = 1;
                 ps.setString(i++, snapshot.id().value());
@@ -44,6 +45,7 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
                 ps.setString(i++, snapshot.errorMessage());
                 ps.setInt(i++, snapshot.attempt());
                 ps.setString(i++, snapshot.snapshotType());
+                ps.setTimestamp(i++, java.sql.Timestamp.from(snapshot.executedAt()));
             });
         return toSnapshotData(snapshot);
     }
@@ -59,7 +61,25 @@ public class JdbcSnapshotRepository implements SnapshotRepository {
     }
 
     private void setJson(PreparedStatement ps, int idx, String json) throws SQLException {
-        ps.setObject(idx, json, Types.OTHER);
+        if (json == null) {
+            ps.setNull(idx, isPostgresql(ps) ? Types.OTHER : Types.VARCHAR);
+        } else if (isPostgresql(ps)) {
+            ps.setObject(idx, json, Types.OTHER);
+        } else {
+            ps.setString(idx, json);
+        }
+    }
+
+    private boolean isPostgresql(PreparedStatement ps) throws SQLException {
+        if (postgresql == null) {
+            synchronized (this) {
+                if (postgresql == null) {
+                    String dbName = ps.getConnection().getMetaData().getDatabaseProductName();
+                    postgresql = dbName != null && dbName.toLowerCase().contains("postgresql");
+                }
+            }
+        }
+        return postgresql;
     }
 
     private SnapshotData toSnapshotData(ExecutionSnapshot snapshot) {

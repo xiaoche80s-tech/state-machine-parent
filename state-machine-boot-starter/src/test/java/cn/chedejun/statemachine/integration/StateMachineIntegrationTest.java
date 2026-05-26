@@ -44,7 +44,7 @@ class DdlExecutor {
     DdlExecutor(DataSource dataSource) {
         try {
             JdbcTemplate template = new JdbcTemplate(dataSource);
-            String sql = new Scanner(Objects.requireNonNull(DdlExecutor.class.getResourceAsStream("/ddl/postgresql.sql")), StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
+            String sql = new Scanner(Objects.requireNonNull(DdlExecutor.class.getResourceAsStream("/ddl/mysql.sql")), StandardCharsets.UTF_8.name()).useDelimiter("\\A").next();
             for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) template.execute(t); }
             try { template.execute("ALTER TABLE state_machine_snapshots ADD COLUMN snapshot_type VARCHAR(16) NOT NULL DEFAULT 'NODE'"); } catch (Exception e) { /* 列已存在 */ }
         } catch (Exception e) { throw new RuntimeException("Failed to execute DDL", e); }
@@ -54,10 +54,10 @@ class DdlExecutor {
 @SpringBootTest(
     classes = StateMachineIntegrationTest.TestConfig.class,
     properties = {
-        "spring.datasource.url=jdbc:postgresql://1p.inas.club:15432/java-project-demo",
-        "spring.datasource.username=chedejun",
-        "spring.datasource.password=123456",
-        "spring.datasource.driver-class-name=org.postgresql.Driver",
+        "spring.datasource.url=jdbc:mysql://inas.club:3306/java-study?useUnicode=true&characterEncoding=utf-8&useSSL=false",
+        "spring.datasource.username=java-study",
+        "spring.datasource.password=abcd1234",
+        "spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver",
         "state-machine.ddl-auto=update",
         "state-machine.management.enabled=true",
         "state-machine.console.enabled=true"
@@ -72,11 +72,12 @@ class StateMachineIntegrationTest {
 
         @Bean
         public DdlExecutor ddlExecutor(DataSource dataSource) {
+            DdlExecutor executor = new DdlExecutor(dataSource);
             JdbcTemplate template = new JdbcTemplate(dataSource);
             template.execute("DELETE FROM state_machine_snapshots");
             template.execute("DELETE FROM state_machine_instances");
             template.execute("DELETE FROM state_machine_definitions");
-            return new DdlExecutor(dataSource);
+            return executor;
         }
 
         @Bean

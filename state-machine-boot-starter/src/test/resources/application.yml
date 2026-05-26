@@ -1,9 +1,9 @@
 spring:
   datasource:
-    url: jdbc:postgresql://1p.inas.club:15432/java-project-demo
-    username: chedejun
-    password: 123456
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:mysql://inas.club:3306/java-study?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    username: java-study
+    password: abcd1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
 state-machine:
   ddl-auto: update

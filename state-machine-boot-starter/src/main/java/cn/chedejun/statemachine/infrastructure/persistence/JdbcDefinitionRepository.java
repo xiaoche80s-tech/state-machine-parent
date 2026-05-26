@@ -19,6 +19,7 @@ public class JdbcDefinitionRepository implements DefinitionRepository {
     private static final Logger log = LoggerFactory.getLogger(JdbcDefinitionRepository.class);
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private volatile Boolean postgresql;
 
     public JdbcDefinitionRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -80,7 +81,28 @@ public class JdbcDefinitionRepository implements DefinitionRepository {
     }
 
     private void setJson(PreparedStatement ps, int idx, String json) throws SQLException {
-        ps.setObject(idx, json, Types.OTHER);
+        if (json == null) {
+            ps.setNull(idx, isPostgresql(ps) ? Types.OTHER : Types.VARCHAR);
+        } else if (isPostgresql(ps)) {
+            // PostgreSQL JSON/JSONB 列需要 Types.OTHER
+            ps.setObject(idx, json, Types.OTHER);
+        } else {
+            // MySQL JSON 列需要 setString，避免 binary charset 问题
+            ps.setString(idx, json);
+        }
+    }
+
+    private boolean isPostgresql(PreparedStatement ps) throws SQLException {
+        if (postgresql == null) {
+            synchronized (this) {
+                if (postgresql == null) {
+                    String dbName = ps.getConnection().getMetaData().getDatabaseProductName();
+                    postgresql = dbName != null && dbName.toLowerCase().contains("postgresql");
+                    log.info("Detected database: {}, postgresql={}", dbName, postgresql);
+                }
+            }
+        }
+        return postgresql;
     }
 
     private RowMapper<DefinitionData> rowMapper() {
