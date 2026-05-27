@@ -2,21 +2,20 @@
 
 <cite>
 **本文引用的文件**
-- [StateMachine.java](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java)
-- [StateMachineBuilder.java](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java)
-- [ConsoleController.java](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java)
-- [StateMachineEndpoint.java](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java)
-- [StateMachineRegistry.java](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java)
-- [Action.java](file://src/main/java/cn/chedejun/statemachine/core/Action.java)
-- [Condition.java](file://src/main/java/cn/chedejun/statemachine/core/Condition.java)
-- [State.java](file://src/main/java/cn/chedejun/statemachine/core/State.java)
-- [Transition.java](file://src/main/java/cn/chedejun/statemachine/core/Transition.java)
-- [RetryPolicy.java](file://src/main/java/cn/chedejun/statemachine/core/RetryPolicy.java)
-- [Context.java](file://src/main/java/cn/chedejun/statemachine/core/Context.java)
-- [ExecuteResult.java](file://src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java)
-- [StateMachineAutoConfiguration.java](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java)
-- [StateMachineProperties.java](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineProperties.java)
-- [README.md](file://README.md)
+- [StateMachineFacade.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java)
+- [InstanceExecutionService.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java)
+- [StateMachineEndpoint.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java)
+- [StateMachineConsoleServlet.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java)
+- [ExecuteResult.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java)
+- [InstanceDTO.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/InstanceDTO.java)
+- [MachineDTO.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/MachineDTO.java)
+- [MachineDefinitionDTO.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/MachineDefinitionDTO.java)
+- [SnapshotDTO.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/SnapshotDTO.java)
+- [InstanceId.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/InstanceId.java)
+- [StateMachine.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/engine/StateMachine.java)
+- [README.md](file://state-machine-boot-starter/README.md)
+- [index.html](file://state-machine-boot-starter/src/main/resources/console/index.html)
+- [StateMachineIntegrationTest.java](file://state-machine-boot-starter/src/test/java/cn/chedejun/statemachine/integration/StateMachineIntegrationTest.java)
 </cite>
 
 ## 目录
@@ -25,431 +24,408 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖分析](#依赖分析)
-7. [性能考虑](#性能考虑)
+6. [依赖关系分析](#依赖关系分析)
+7. [性能与可靠性](#性能与可靠性)
 8. [故障排查指南](#故障排查指南)
 9. [结论](#结论)
 10. [附录](#附录)
 
 ## 简介
-本文件为状态机启动器的完整API参考文档，覆盖核心类与管理端点的公共接口定义、参数说明、返回值、使用示例、异常与错误码、版本兼容性与废弃策略、最佳实践与注意事项。目标读者包括后端开发者、运维人员与集成工程师。
+本API参考面向使用状态机引擎的客户端与集成方，覆盖以下内容：
+- StateMachineFacade公共接口：execute、retry、retryWithCustomContext、resumeByBusinessId、resumeByInstanceId 的参数、返回值与异常行为
+- REST API端点规范：HTTP方法、URL模式、请求/响应格式、状态码
+- DTO数据模型：字段含义、类型与约束
+- 使用模式与最佳实践：执行、重试、挂起/恢复、查询
+- 版本兼容性与迁移建议
+- 客户端集成指引
 
 ## 项目结构
-- 核心运行时：状态机模型、构建器、注册表、动作与条件接口、重试策略、上下文与执行结果。
-- 自动装配与配置：基于Spring Boot的自动配置、属性配置类。
-- 管理能力：Actuator端点与Web控制台控制器，提供状态机清单、版本查询、实例查询、重试控制与可视化界面。
+本项目采用“启动器 + 示例 + 管理控制台”的结构组织，核心模块位于 state-machine-boot-starter 中，包含应用服务、领域模型、管理端点与控制台Servlet。
 
 ```mermaid
 graph TB
-subgraph "核心运行时"
-SM["StateMachine"]
-SMB["StateMachineBuilder"]
-REG["StateMachineRegistry"]
-ACT["Action"]
-COND["Condition"]
-ST["State"]
-TR["Transition"]
-RP["RetryPolicy"]
-CTX["Context"]
-ER["ExecuteResult"]
+subgraph "启动器模块"
+A["StateMachineFacade<br/>对外门面"]
+B["InstanceExecutionService<br/>实例执行服务"]
+C["StateMachineEndpoint<br/>Actuator端点"]
+D["StateMachineConsoleServlet<br/>控制台Servlet"]
 end
-subgraph "自动装配"
-ACA["StateMachineAutoConfiguration"]
-PROP["StateMachineProperties"]
+subgraph "领域模型"
+E["StateMachine<br/>状态机定义"]
+F["ExecuteResult<br/>执行结果"]
+G["InstanceId<br/>实例标识"]
 end
-subgraph "管理能力"
-EP["StateMachineEndpoint"]
-CC["ConsoleController"]
+subgraph "管理DTO"
+H["InstanceDTO"]
+I["MachineDTO"]
+J["MachineDefinitionDTO"]
+K["SnapshotDTO"]
 end
-SMB --> SM
-SM --> REG
-SM --> RP
-SM --> ST
-SM --> TR
-ST --> ACT
-TR --> COND
-REG --> SM
-ACA --> REG
-ACA --> SM
-EP --> REG
-CC --> REG
-EP --> SM
-CC --> SM
+A --> B
+B --> E
+B --> F
+B --> G
+C --> H
+C --> I
+C --> J
+D --> H
+D --> I
+D --> J
+D --> K
 ```
 
 **图表来源**
-- [StateMachine.java:11-196](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L11-L196)
-- [StateMachineBuilder.java:8-53](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L8-L53)
-- [StateMachineRegistry.java:9-73](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java#L9-L73)
-- [Action.java:3-12](file://src/main/java/cn/chedejun/statemachine/core/Action.java#L3-L12)
-- [Condition.java:3-7](file://src/main/java/cn/chedejun/statemachine/core/Condition.java#L3-L7)
-- [State.java:3-16](file://src/main/java/cn/chedejun/statemachine/core/State.java#L3-L16)
-- [Transition.java:3-20](file://src/main/java/cn/chedejun/statemachine/core/Transition.java#L3-L20)
-- [RetryPolicy.java:5-45](file://src/main/java/cn/chedejun/statemachine/core/RetryPolicy.java#L5-L45)
-- [Context.java:6-24](file://src/main/java/cn/chedejun/statemachine/core/Context.java#L6-L24)
-- [ExecuteResult.java:14-23](file://src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L14-L23)
-- [StateMachineAutoConfiguration.java:22-80](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L22-L80)
-- [StateMachineProperties.java:5-35](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineProperties.java#L5-L35)
-- [StateMachineEndpoint.java:16-73](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L16-L73)
-- [ConsoleController.java:15-106](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L15-L106)
+- [StateMachineFacade.java:16-51](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L16-L51)
+- [InstanceExecutionService.java:25-41](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L25-L41)
+- [StateMachineEndpoint.java:22-38](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L22-L38)
+- [StateMachineConsoleServlet.java:39-61](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L39-L61)
+- [StateMachine.java:19-48](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/engine/StateMachine.java#L19-L48)
+- [ExecuteResult.java:16-37](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L16-L37)
+- [InstanceId.java:6-16](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/InstanceId.java#L6-L16)
 
 **章节来源**
-- [StateMachine.java:11-196](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L11-L196)
-- [StateMachineBuilder.java:8-53](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L8-L53)
-- [StateMachineAutoConfiguration.java:22-80](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L22-L80)
-- [StateMachineProperties.java:5-35](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineProperties.java#L5-L35)
-- [StateMachineEndpoint.java:16-73](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L16-L73)
-- [ConsoleController.java:15-106](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L15-L106)
+- [README.md:1-65](file://state-machine-boot-starter/README.md#L1-L65)
 
 ## 核心组件
-本节对关键API进行分门别类的说明，包含方法签名、参数、返回值、异常与使用要点。
-
-- StateMachine
-  - 负责状态机执行、重试、持久化与状态推进。
-  - 关键方法
-    - execute(context)
-      - 参数：context 上下文对象
-      - 返回：ExecuteResult 执行结果
-      - 异常：初始化缺失或状态异常抛出状态机异常
-      - 示例路径：[README示例:42-49](file://README.md#L42-L49)
-    - execute(context, targetState)
-    - execute(context, startState, targetState)
-    - retry(instanceId, context)
-      - 仅允许对“FAILED”实例重试，需传入新上下文
-    - retry(instanceId)
-      - 仅允许对“FAILED”实例重试，自动从首个快照反序列化上下文
-    - 访问器：getName, getVersion, getStates, getTransitions, getRetryPolicy
-    - 注入器：setJdbcTemplate, setRegistry
-  - 复杂度与行为
-    - 单次执行最多迭代状态数×(最大尝试次数+1)+1，避免无限循环
-    - 每个状态执行成功写入快照“SUCCESS”，失败按重试策略延迟重试
-  - 错误与异常
-    - 未初始化：抛出状态机异常
-    - 状态不存在：抛出状态机异常（状态未找到）
-    - 超过最大迭代：抛出状态机异常
-    - 非FAILED实例重试：抛出状态机异常
-  - 使用建议
-    - 在构建阶段设置合适的重试策略
-    - 对可能失败的外部调用在Action中捕获并记录，以便快照保留错误信息
-
-- StateMachineBuilder
-  - 构建状态机定义，支持链式配置
-  - 关键方法
-    - builder(name) 静态工厂
-    - state(name, action) 添加状态
-    - transition(from, to) / transition(from, to, condition) 添加转移
-    - retryPolicy(policy) 设置重试策略
-    - contextClass(clazz) 指定上下文类型
-    - build() 生成StateMachine并注册到注册表
-  - 版本号
-    - 自动生成版本号“vN”，N为递增计数
-  - 使用建议
-    - 在Spring环境中，自动装配会注入JdbcTemplate与注册表，无需手动设置
-
-- StateMachineRegistry
-  - 维护状态机定义与实例元数据，负责序列化定义并持久化
-  - 关键方法
-    - register(machine) 注册并持久化定义
-    - getLatest(name) 获取最新版本
-    - getVersions(name) 获取指定名称的所有版本
-    - getMachineNames() 获取已注册机器名集合
-    - getAllDefinitions() 获取全部定义
-  - 行为
-    - 若定义已存在则不重复持久化
-    - 将状态、转移、重试策略序列化为JSON保存
-
-- Action 与 Condition
-  - Action<C>：执行业务逻辑，结果通过上下文写入，自动记录快照
-  - Condition<C>：测试条件，决定是否触发转移
-
-- State 与 Transition
-  - State：封装状态名与动作
-  - Transition：封装from、to与条件
-
-- RetryPolicy
-  - 提供指数退避策略，可配置最大尝试次数、初始延迟、最大延迟与退避因子
-  - 工厂与构建器：exponentialBackoff()、none()、Builder
-
-- Context 与 ExecuteResult
-  - Context：键值存储的上下文容器，支持类型安全读取
-  - ExecuteResult：执行结果记录，包含实例ID、机器名、版本、当前状态、状态码、错误信息与创建时间
+- StateMachineFacade：对外门面，封装执行、重试、恢复等操作，委托给 InstanceExecutionService
+- InstanceExecutionService：核心执行引擎，负责实例创建、状态流转、动作执行、重试与快照记录
+- StateMachineEndpoint：Spring Boot Actuator端点，提供机器与定义查询、失败实例重试提示
+- StateMachineConsoleServlet：基于Servlet的Web控制台与REST API，提供机器、版本、实例、快照查询与重试/恢复操作
+- ExecuteResult：执行结果载体，包含实例ID、状态机名称/版本、当前状态、业务ID、错误信息与创建时间
+- DTO集合：用于管理端与控制台的序列化输出
 
 **章节来源**
-- [StateMachine.java:37-196](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L37-L196)
-- [StateMachineBuilder.java:20-53](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L20-L53)
-- [StateMachineRegistry.java:20-73](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java#L20-L73)
-- [Action.java:3-12](file://src/main/java/cn/chedejun/statemachine/core/Action.java#L3-L12)
-- [Condition.java:3-7](file://src/main/java/cn/chedejun/statemachine/core/Condition.java#L3-L7)
-- [State.java:3-16](file://src/main/java/cn/chedejun/statemachine/core/State.java#L3-L16)
-- [Transition.java:3-20](file://src/main/java/cn/chedejun/statemachine/core/Transition.java#L3-L20)
-- [RetryPolicy.java:5-45](file://src/main/java/cn/chedejun/statemachine/core/RetryPolicy.java#L5-L45)
-- [Context.java:6-24](file://src/main/java/cn/chedejun/statemachine/core/Context.java#L6-L24)
-- [ExecuteResult.java:14-23](file://src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L14-L23)
+- [StateMachineFacade.java:16-51](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L16-L51)
+- [InstanceExecutionService.java:25-41](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L25-L41)
+- [StateMachineEndpoint.java:22-38](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L22-L38)
+- [StateMachineConsoleServlet.java:39-61](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L39-L61)
+- [ExecuteResult.java:16-37](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L16-L37)
 
 ## 架构总览
-状态机启动器通过自动配置在Spring容器中完成DDL初始化、定义仓库、注册表与Bean后处理器装配。状态机Bean在后处理阶段被注入Jdbc模板与注册表，并自动注册到注册表。管理端点与控制台控制器依赖注册表与Jdbc模板提供查询与重试能力。
+下图展示客户端调用门面、服务层与持久化之间的交互，以及管理端点与控制台的访问路径。
 
 ```mermaid
-graph TB
-DS["DataSource"]
-JDBCT["JdbcTemplate"]
-DDL["DdlInitializer"]
-DEF["DefinitionRepository"]
-REG["StateMachineRegistry"]
-BPP["BeanPostProcessor"]
-SMB["StateMachineBuilder"]
-SM["StateMachine"]
-EP["StateMachineEndpoint"]
-CC["ConsoleController"]
-DS --> JDBCT
-JDBCT --> DDL
-JDBCT --> DEF
-JDBCT --> REG
-BPP --> SM
-SMB --> SM
-SM --> REG
-EP --> REG
-CC --> REG
-EP --> SM
-CC --> SM
+sequenceDiagram
+participant Client as "客户端"
+participant Facade as "StateMachineFacade"
+participant ExecSvc as "InstanceExecutionService"
+participant Repo as "仓库层"
+participant DB as "数据库"
+Client->>Facade : 调用 execute/retry/resume
+Facade->>ExecSvc : 委派具体操作
+ExecSvc->>Repo : 读写实例/快照/定义
+Repo->>DB : 持久化操作
+DB-->>Repo : 结果
+Repo-->>ExecSvc : 数据
+ExecSvc-->>Facade : 执行结果/状态
+Facade-->>Client : 返回结果或抛出异常
 ```
 
 **图表来源**
-- [StateMachineAutoConfiguration.java:26-80](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L26-L80)
-- [StateMachineRegistry.java:9-73](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java#L9-L73)
-- [StateMachineBuilder.java:8-53](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L8-L53)
-- [StateMachine.java:11-196](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L11-L196)
-- [StateMachineEndpoint.java:16-73](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L16-L73)
-- [ConsoleController.java:15-106](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L15-L106)
-
-**章节来源**
-- [StateMachineAutoConfiguration.java:26-80](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L26-L80)
+- [StateMachineFacade.java:26-46](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L26-L46)
+- [InstanceExecutionService.java:43-114](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L43-L114)
 
 ## 详细组件分析
 
-### StateMachine 类API
-- 方法清单与说明
-  - execute(context)
-    - 描述：执行状态机，从首个状态开始，直至无后续状态或达到目标状态
-    - 参数：context 上下文
-    - 返回：ExecuteResult
-    - 异常：未初始化、状态不存在、超限
-  - execute(context, targetState)
-  - execute(context, startState, targetState)
-  - retry(instanceId, context)
-    - 描述：对失败实例重试，需提供新上下文
-    - 参数：instanceId 实例ID；context 新上下文
-    - 返回：无
-    - 异常：实例不存在、非FAILED状态
-  - retry(instanceId)
-    - 描述：对失败实例重试，自动从首个快照读取上下文
-    - 参数：instanceId 实例ID
-    - 返回：无
-    - 异常：同上
-  - 访问器与注入器
-    - getName(), getVersion(), getStates(), getTransitions(), getRetryPolicy()
-    - setJdbcTemplate(jdbcTemplate), setRegistry(registry)
-
-- 使用示例
-  - 定义与执行：参见[README示例:19-49](file://README.md#L19-L49)
-
-- 最佳实践
-  - 在Action中对可恢复异常进行捕获并记录，便于快照保留错误信息
-  - 合理设置重试策略，避免过长阻塞
-
-**章节来源**
-- [StateMachine.java:37-196](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L37-L196)
-- [README.md:19-49](file://README.md#L19-L49)
-
-### StateMachineBuilder 类API
-- 方法清单与说明
-  - builder(name) 静态工厂
-  - state(name, action) 添加状态
-  - transition(from, to) / transition(from, to, condition) 添加转移
-  - retryPolicy(policy) 设置重试策略
-  - contextClass(clazz) 指定上下文类型
-  - build() 生成StateMachine并注册到注册表
-
-- 版本号规则
-  - 自动生成“vN”版本号，N为全局递增计数
-
-- 最佳实践
-  - 在Spring环境中无需手动设置JdbcTemplate与注册表，自动装配会完成注入
-
-**章节来源**
-- [StateMachineBuilder.java:20-53](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L20-L53)
-
-### StateMachineRegistry 类API
-- 方法清单与说明
-  - register(machine) 注册并持久化定义
-  - getLatest(name) 获取最新版本
-  - getVersions(name) 获取指定名称的所有版本
-  - getMachineNames() 获取已注册机器名集合
-  - getAllDefinitions() 获取全部定义
-
-- 数据持久化
-  - 将状态、转移、重试策略序列化为JSON保存至定义仓库
-
-**章节来源**
-- [StateMachineRegistry.java:20-73](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java#L20-L73)
-
-### ConsoleController 类API
-- 控制台入口
-  - GET /statemachine
-  - GET /statemachine/ 重定向至静态首页
-
-- 接口清单
-  - GET /statemachine/api/machines
-    - 返回：机器清单（名称、版本数量、运行中实例数、失败实例数）
-  - GET /statemachine/api/machines/{name}/versions
-    - 返回：指定机器的所有版本定义（包含状态、转移、重试策略）
-  - GET /statemachine/api/machines/{name}/instances
-    - 查询参数：status（可选）、page（默认0）、size（默认20）
-    - 返回：实例列表与总数、页码、大小
-  - GET /statemachine/api/instances/{id}
-    - 返回：实例详情与快照列表
-  - POST /statemachine/api/instances/{id}/retry
-    - 返回：重试执行结果消息或错误提示
-
-- 最佳实践
-  - 使用分页查询大规模实例列表
-  - 通过状态筛选快速定位问题实例
-
-**章节来源**
-- [ConsoleController.java:19-106](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L19-L106)
-
-### StateMachineEndpoint 类API
-- Actuator端点
-  - 端点ID：state-machines
-
-- 接口清单
-  - GET /actuator/state-machines
-    - 返回：机器清单（名称、版本数量、运行中实例数、失败实例数）
-  - GET /actuator/state-machines/{name}
-    - 返回：指定机器的所有版本定义
-  - POST /actuator/state-machines/{name}/{instanceId}
-    - 描述：将失败实例重置为RUNNING，随后需调用状态机的retry方法重新执行
-    - 返回：操作结果消息
-
-- 最佳实践
-  - 与ConsoleController配合使用，统一管理状态机实例与重试
-
-**章节来源**
-- [StateMachineEndpoint.java:16-73](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L16-L73)
-
-### 辅助类型与接口
-- Action<C>
-  - 函数式接口，执行业务逻辑，结果通过上下文写入
-- Condition<C>
-  - 函数式接口，测试条件以决定转移
-- State<C>
-  - 封装状态名与动作
-- Transition<C>
-  - 封装from、to与条件
-- RetryPolicy
-  - 指数退避策略，支持构建器配置
-- Context
-  - 上下文容器，支持类型安全读取
-- ExecuteResult
-  - 执行结果记录
-
-**章节来源**
-- [Action.java:3-12](file://src/main/java/cn/chedejun/statemachine/core/Action.java#L3-L12)
-- [Condition.java:3-7](file://src/main/java/cn/chedejun/statemachine/core/Condition.java#L3-L7)
-- [State.java:3-16](file://src/main/java/cn/chedejun/statemachine/core/State.java#L3-L16)
-- [Transition.java:3-20](file://src/main/java/cn/chedejun/statemachine/core/Transition.java#L3-L20)
-- [RetryPolicy.java:5-45](file://src/main/java/cn/chedejun/statemachine/core/RetryPolicy.java#L5-L45)
-- [Context.java:6-24](file://src/main/java/cn/chedejun/statemachine/core/Context.java#L6-L24)
-- [ExecuteResult.java:14-23](file://src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L14-L23)
-
-## 依赖分析
-- 组件耦合
-  - StateMachine 依赖注册表、JdbcTemplate、ObjectMapper、实例与快照仓库
-  - StateMachineBuilder 依赖注册表与JdbcTemplate（自动装配时注入）
-  - ConsoleController 与 StateMachineEndpoint 依赖注册表与Jdbc模板
-  - 自动配置通过BeanPostProcessor向StateMachine注入依赖并注册
-- 外部依赖
-  - Spring JDBC、Spring Boot Actuator、Jackson
+### StateMachineFacade 接口参考
+- 方法：execute、retry、retryWithCustomContext、resumeByBusinessId、resumeByInstanceId、getName、getVersion、getMachine
+- 参数与返回值
+  - execute(context, businessId): 返回 ExecuteResult
+  - retry(instanceId): 无返回，仅触发重试
+  - retryWithCustomContext(instanceId, context): 无返回，携带新上下文重试
+  - resumeByBusinessId(businessId, expectedState, contextMerger): 无返回，按业务ID恢复
+  - resumeByInstanceId(instanceId, expectedState, contextMerger): 无返回，按实例ID恢复
+  - 其他：返回字符串或内部状态机引用
+- 异常处理
+  - 当实例不存在、状态不匹配、未处于可重试状态、无失败快照等场景抛出 StateMachineException 或等效异常
+  - 重试中断会抛出带中断标记的异常
 
 ```mermaid
-graph LR
-SMB["StateMachineBuilder"] --> SM["StateMachine"]
-REG["StateMachineRegistry"] --> SM
-ACA["StateMachineAutoConfiguration"] --> REG
-ACA --> SM
-CC["ConsoleController"] --> REG
-CC --> SM
-EP["StateMachineEndpoint"] --> REG
-EP --> SM
+classDiagram
+class StateMachineFacade {
++execute(context, businessId) ExecuteResult
++retry(instanceId) void
++retryWithCustomContext(instanceId, context) void
++resumeByBusinessId(businessId, expectedState, merger) void
++resumeByInstanceId(instanceId, expectedState, merger) void
++getName() String
++getVersion() String
++getMachine() StateMachine
+}
+class InstanceExecutionService {
++execute(machine, context, businessId) ExecuteResult
++retry(machine, instanceId) void
++retryWithCustomContext(machine, instanceId, context) void
++resumeByBusinessId(machine, businessId, expectedState, merger) void
++resumeByInstanceId(machine, instanceId, expectedState, merger) void
+}
+StateMachineFacade --> InstanceExecutionService : "委派"
 ```
 
 **图表来源**
-- [StateMachineAutoConfiguration.java:44-56](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L44-L56)
-- [StateMachineRegistry.java:9-73](file://src/main/java/cn/chedejun/statemachine/core/StateMachineRegistry.java#L9-L73)
-- [ConsoleController.java:15-106](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L15-L106)
-- [StateMachineEndpoint.java:16-73](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L16-L73)
+- [StateMachineFacade.java:16-51](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L16-L51)
+- [InstanceExecutionService.java:43-114](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L43-L114)
 
 **章节来源**
-- [StateMachineAutoConfiguration.java:44-56](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineAutoConfiguration.java#L44-L56)
+- [StateMachineFacade.java:26-46](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L26-L46)
+- [InstanceExecutionService.java:74-114](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L74-L114)
 
-## 性能考虑
-- 执行复杂度
-  - 单次执行最多迭代上限由状态数与重试次数决定，避免无限循环
-- 序列化开销
-  - 上下文与定义采用JSON序列化，建议保持上下文精简
+### REST API 规范
+
+#### 控制台Servlet端点
+- 基础路径：/statemachine/api/*
+- 内容类型：application/json；字符集 UTF-8
+- 访问方式：GET/POST
+
+1) 获取机器列表
+- 方法：GET
+- 路径：/statemachine/api/machines.json
+- 查询参数：无
+- 响应：数组，元素为 MachineDTO
+- 状态码：200 成功；500 服务器错误
+
+2) 获取指定机器版本
+- 方法：GET
+- 路径：/statemachine/api/versions.json
+- 查询参数：name（必填）
+- 响应：数组，元素为 MachineDefinitionDTO
+- 状态码：200 成功；400 参数缺失；500 服务器错误
+
+3) 分页查询实例
+- 方法：GET
+- 路径：/statemachine/api/instances.json
+- 查询参数：
+  - name（必填）
+  - status：RUNNING/COMPLETED/FAILED/SUSPENDED（可选）
+  - businessId（可选）
+  - instanceId（可选）
+  - page（默认0，可选）
+  - size（默认20，上限200，可选）
+- 响应：包含 total/page/size/instances 的对象，instances为 InstanceDTO[]
+- 状态码：200 成功；400 参数无效；500 服务器错误
+
+4) 获取实例详情
+- 方法：GET
+- 路径：/statemachine/api/instance.json
+- 查询参数：id（必填）
+- 响应：包含 instance（InstanceDTO）与 snapshots（SnapshotDTO[]）
+- 状态码：200 成功；400 参数缺失；404 实例不存在；500 服务器错误
+
+5) 恢复挂起实例
+- 方法：POST
+- 路径：/statemachine/api/resume.json
+- 请求体：id（必填）、expectedCurrentState（必填）、contextJson（可选）
+- 响应：包含 success/message/currentState 的对象
+- 状态码：200 成功；400 参数缺失；500 服务器错误
+
+6) 重试失败实例
+- 方法：POST
+- 路径：/statemachine/api/retry.json
+- 请求体：id（必填）
+- 响应：包含 message 的对象
+- 状态码：200 成功；400 参数缺失；500 服务器错误
+
+```mermaid
+sequenceDiagram
+participant Client as "客户端"
+participant Servlet as "StateMachineConsoleServlet"
+participant Registry as "状态机注册表"
+participant ExecSvc as "InstanceExecutionService"
+participant Repo as "仓库层"
+Client->>Servlet : GET /api/instances.json?name=...
+Servlet->>Registry : 获取机器/版本信息
+Servlet->>Repo : 查询实例与快照
+Repo-->>Servlet : 数据
+Servlet-->>Client : JSON 响应
+Client->>Servlet : POST /api/retry.json {"id" : "..."}
+Servlet->>ExecSvc : retry(machine, instanceId)
+ExecSvc->>Repo : 更新状态
+Repo-->>ExecSvc : 结果
+Servlet-->>Client : {"message" : "..."}
+```
+
+**图表来源**
+- [StateMachineConsoleServlet.java:113-158](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L113-L158)
+- [StateMachineConsoleServlet.java:197-245](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L197-L245)
+- [StateMachineConsoleServlet.java:321-348](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L321-L348)
+
+**章节来源**
+- [StateMachineConsoleServlet.java:65-108](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L65-L108)
+- [StateMachineConsoleServlet.java:113-158](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L113-L158)
+- [StateMachineConsoleServlet.java:197-245](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L197-L245)
+- [StateMachineConsoleServlet.java:270-348](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L270-L348)
+
+#### Actuator 端点
+- 端点ID：state-machines
+- 访问方式：GET
+- 路径：/actuator/state-machines
+- 响应：
+  - listMachines：List<MachineDTO>
+  - getVersions(name)：List<MachineDefinitionDTO>
+- 注意：该端点返回“失败实例计数”等统计，但不直接重试失败实例
+
+**章节来源**
+- [StateMachineEndpoint.java:22-38](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L22-L38)
+- [StateMachineEndpoint.java:40-79](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L40-L79)
+
+### DTO 数据模型
+
+#### ExecuteResult
+- 字段：instanceId、machineName、definitionVersion、currentState、status、errorMessage、businessId、createdAt
+- 用途：execute完成后返回给调用方，便于业务系统直接使用
+
+**章节来源**
+- [ExecuteResult.java:16-37](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L16-L37)
+
+#### MachineDTO
+- 字段：name、versionCount、runningInstances、failedInstances
+- 用途：控制台/管理端展示机器概览
+
+**章节来源**
+- [MachineDTO.java:6-17](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/MachineDTO.java#L6-L17)
+
+#### MachineDefinitionDTO
+- 字段：id、name、version、states、transitions、retryPolicy、registeredAt
+- 用途：展示状态机定义详情（状态、转换、重试策略）
+
+**章节来源**
+- [MachineDefinitionDTO.java:9-28](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/MachineDefinitionDTO.java#L9-L28)
+
+#### InstanceDTO
+- 字段：id、machineName、definitionVersion、currentState、status、businessId、retryCount、errorMessage、createdAt、updatedAt
+- 用途：实例列表与详情展示
+
+**章节来源**
+- [InstanceDTO.java:7-32](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/InstanceDTO.java#L7-L32)
+
+#### SnapshotDTO
+- 字段：id、stateName、input、output、status、errorMessage、attempt、snapshotType、executedAt
+- 用途：展示执行快照（节点与路由）
+
+**章节来源**
+- [SnapshotDTO.java:7-30](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/dto/SnapshotDTO.java#L7-L30)
+
+### 使用模式与示例
+
+- 执行流程
+  - 客户端准备上下文，调用 facade.execute(context, businessId)
+  - 服务端创建实例、持久化定义、进入执行循环，记录快照
+  - 返回 ExecuteResult，包含最终状态与实例ID
+
+- 失败重试
+  - 对于 FAILED 实例，先检查是否可重试（服务端限制）
+  - 可通过控制台Servlet的 /api/retry.json 或 Actuator端点进行重试
+  - 重试时可选择从上次失败快照恢复或携带新上下文
+
+- 挂起/恢复
+  - 当状态为 SUSPENDED 时，使用 resumeByBusinessId 或 resumeByInstanceId
+  - 恢复前需校验 expectedState 与当前状态一致
+  - 可通过控制台Servlet的 /api/resume.json 提交 contextJson 进行上下文合并
+
+- 查询与监控
+  - 使用 /api/machines.json、/api/versions.json、/api/instances.json、/api/instance.json
+  - 控制台页面提供可视化流程图与快照时间线
+
+```mermaid
+flowchart TD
+Start(["开始"]) --> Exec["执行 execute(context, businessId)"]
+Exec --> Loop{"状态流转循环"}
+Loop --> |成功| Next["记录成功快照"]
+Loop --> |失败且未达最大重试| Wait["等待延迟后重试"]
+Loop --> |失败且已达最大重试| Fail["标记 FAILED 并终止"]
+Loop --> |无后续转换且无异常| Complete["标记 COMPLETED"]
+Next --> Loop
+Wait --> Loop
+Complete --> End(["结束"])
+Fail --> End
+```
+
+**图表来源**
+- [InstanceExecutionService.java:158-193](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L158-L193)
+- [InstanceExecutionService.java:200-237](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L200-L237)
+
+**章节来源**
+- [README.md:17-49](file://state-machine-boot-starter/README.md#L17-L49)
+- [StateMachineIntegrationTest.java:225-253](file://state-machine-boot-starter/src/test/java/cn/chedejun/statemachine/integration/StateMachineIntegrationTest.java#L225-L253)
+- [StateMachineIntegrationTest.java:304-371](file://state-machine-boot-starter/src/test/java/cn/chedejun/statemachine/integration/StateMachineIntegrationTest.java#L304-L371)
+
+## 依赖关系分析
+
+```mermaid
+graph LR
+Facade["StateMachineFacade"] --> Svc["InstanceExecutionService"]
+Svc --> SM["StateMachine"]
+Svc --> ER["ExecuteResult"]
+Svc --> IID["InstanceId"]
+Svc --> Repo["仓库层"]
+Repo --> DB["数据库"]
+Console["StateMachineConsoleServlet"] --> Repo
+Console --> Svc
+Act["StateMachineEndpoint"] --> Repo
+```
+
+**图表来源**
+- [StateMachineFacade.java:16-24](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L16-L24)
+- [InstanceExecutionService.java:25-41](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L25-L41)
+- [StateMachine.java:19-48](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/engine/StateMachine.java#L19-L48)
+- [ExecuteResult.java:16-37](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/core/ExecuteResult.java#L16-L37)
+- [InstanceId.java:6-16](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/InstanceId.java#L6-L16)
+- [StateMachineConsoleServlet.java:39-61](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L39-L61)
+- [StateMachineEndpoint.java:22-38](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L22-L38)
+
+**章节来源**
+- [StateMachineFacade.java:16-24](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L16-L24)
+- [InstanceExecutionService.java:25-41](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L25-L41)
+
+## 性能与可靠性
+- 重试策略
+  - 支持指数退避等策略，最大重试次数受状态机定义控制
+  - 重试间隔通过策略计算，避免频繁轮询
+- 快照与持久化
+  - 节点执行与路由均记录快照，便于审计与恢复
+  - 路由快照与节点快照区分，路由快照记录目标状态
 - 并发与一致性
-  - 注册表内部使用并发映射，注册与查询为O(1)平均复杂度
-- I/O优化
-  - 使用JdbcTemplate批量查询与更新，建议结合分页与索引优化
+  - 恢复时通过原子更新保证状态变更一致性
+  - 执行循环设置最大迭代次数，防止无限循环
 
-[本节为通用指导，无需特定文件来源]
+**章节来源**
+- [InstanceExecutionService.java:200-237](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L200-L237)
+- [InstanceExecutionService.java:119-152](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L119-L152)
 
 ## 故障排查指南
-- 常见异常与错误码
-  - 未初始化：状态机未注入Jdbc模板或注册表，抛出状态机异常
-  - 状态未找到：执行过程中找不到对应状态，抛出状态机异常
-  - 超过最大迭代：执行超过预设上限，抛出状态机异常
-  - 非FAILED实例重试：仅允许对FAILED实例重试，否则抛出状态机异常
-- 控制台与端点
-  - 通过ConsoleController与StateMachineEndpoint查看实例状态、快照与重试
-  - 使用GET /actuator/state-machines/{name}/{instanceId}将失败实例重置为RUNNING，再调用状态机retry方法
+- 常见异常与定位
+  - 实例不存在：检查实例ID格式与有效性
+  - 状态不匹配：确认 expectedState 与当前状态一致
+  - 非 FAILED 实例不可重试：仅对 FAILED 实例允许重试
+  - 无失败快照：重试前需存在失败快照
+- 日志与诊断
+  - 服务端记录状态执行失败、序列化/反序列化异常、重试中断等日志
+  - 控制台页面展示快照时间线，便于定位失败节点
+- 重试与恢复
+  - 使用控制台Servlet的 /api/retry.json 或 Actuator端点进行重试
+  - 恢复时可通过 contextJson 合并上下文，或使用空上下文继续
 
 **章节来源**
-- [StateMachine.java:83-136](file://src/main/java/cn/chedejun/statemachine/core/StateMachine.java#L83-L136)
-- [ConsoleController.java:91-104](file://src/main/java/cn/chedejun/statemachine/management/ConsoleController.java#L91-L104)
-- [StateMachineEndpoint.java:62-71](file://src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L62-L71)
+- [InstanceExecutionService.java:79-114](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L79-L114)
+- [InstanceExecutionService.java:119-152](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/application/InstanceExecutionService.java#L119-L152)
+- [StateMachineConsoleServlet.java:321-348](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineConsoleServlet.java#L321-L348)
 
 ## 结论
-该状态机启动器提供从定义、执行、持久化到管理的完整能力，具备良好的扩展性与可观测性。通过合理的重试策略与上下文设计，可在生产环境稳定运行。建议在集成时遵循本文的最佳实践与注意事项，确保系统的可靠性与可维护性。
-
-[本节为总结，无需特定文件来源]
+本API参考提供了从门面到执行服务、从REST端点到管理DTO的完整视图，涵盖执行、重试、挂起/恢复、查询与监控等核心能力。客户端可依据本文档对接控制台Servlet或Actuator端点，并结合 ExecuteResult 与DTO完成业务集成。
 
 ## 附录
 
-### 版本兼容性与废弃策略
-- 版本号
-  - 状态机版本自动生成“vN”，N为全局递增计数
-- 兼容性
-  - 默认启用管理端点与控制台，可通过配置开关禁用
-- 废弃策略
-  - 当前版本未声明废弃API；未来版本如需变更，将在发布说明中明确
+### API 版本兼容性与迁移指南
+- 门面签名向后兼容
+  - execute、retry、resume 签名保持不变，内部委派至 InstanceExecutionService
+- Actuator端点
+  - 仅提供机器与版本查询、失败实例重试提示，不直接重试
+  - 如需重试，请使用控制台Servlet的 /api/retry.json
+- 控制台页面
+  - 通过 /statemachine/ 访问，提供流程图、实例列表与快照时间线
+  - 页面与API保持一致的字段与语义
 
 **章节来源**
-- [StateMachineBuilder.java:40-51](file://src/main/java/cn/chedejun/statemachine/core/StateMachineBuilder.java#L40-L51)
-- [StateMachineProperties.java:5-35](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineProperties.java#L5-L35)
-
-### 配置项参考
-- state-machine.ddl-auto：DDL初始化策略，默认“update”
-- state-machine.management.enabled：是否启用管理端点，默认true
-- state-machine.console.enabled：是否启用控制台，默认true
-- state-machine.retry.*：默认重试策略参数（最大尝试次数、初始延迟、最大延迟、退避因子）
-
-**章节来源**
-- [StateMachineProperties.java:7-35](file://src/main/java/cn/chedejun/statemachine/autoconfigure/StateMachineProperties.java#L7-L35)
-
-### 使用示例路径
-- 定义与执行：[README示例:19-49](file://README.md#L19-L49)
-- 控制台访问：[README控制台说明:51-54](file://README.md#L51-L54)
-
-**章节来源**
-- [README.md:19-54](file://README.md#L19-L54)
+- [StateMachineFacade.java:12-15](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/interfaces/StateMachineFacade.java#L12-L15)
+- [StateMachineEndpoint.java:71-78](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/management/StateMachineEndpoint.java#L71-L78)
+- [index.html:1-665](file://state-machine-boot-starter/src/main/resources/console/index.html#L1-L665)
