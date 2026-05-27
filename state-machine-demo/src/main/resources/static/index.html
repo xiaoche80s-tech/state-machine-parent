@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>状态机演示</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
@@ -228,7 +227,7 @@
         };
 
         try {
-            const res = await fetch('/demo/order', {
+            const res = await fetch('demo/order', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
@@ -255,7 +254,7 @@
         const prefix = type === 'outbound' ? 'ob' : '';
         const el = document.getElementById(prefix + 'snapshots');
         try {
-            const res = await fetch(`/demo/${type}s/${instanceId}`);
+            const res = await fetch(`demo/${type}s/${instanceId}`);
             const data = await res.json();
             if (!data.snapshots) { el.innerHTML = '<div class="loading">暂无数据</div>'; return; }
             el.innerHTML = data.snapshots.map(s => `
@@ -272,7 +271,7 @@
     async function loadOrders() {
         const el = document.getElementById('orders');
         try {
-            const res = await fetch('/demo/orders?limit=20');
+            const res = await fetch('demo/orders?limit=20');
             const orders = await res.json();
             if (orders.length === 0) { el.innerHTML = '<div class="loading">暂无订单</div>'; return; }
             el.innerHTML = orders.map(o => `
@@ -293,7 +292,7 @@
 
     async function retryOrder(id) {
         try {
-            await fetch(`/demo/orders/${id}/retry`, { method: 'POST' });
+            await fetch(`demo/orders/${id}/retry`, { method: 'POST' });
             loadOrders();
         } catch (e) { alert('重试失败: ' + e.message); }
     }
@@ -312,7 +311,7 @@
         };
 
         try {
-            const res = await fetch('/demo/outbound', {
+            const res = await fetch('demo/outbound', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
@@ -338,7 +337,7 @@
     async function loadOutbounds() {
         const el = document.getElementById('outbounds');
         try {
-            const res = await fetch('/demo/outbounds?limit=20');
+            const res = await fetch('demo/outbounds?limit=20');
             const list = await res.json();
             if (list.length === 0) { el.innerHTML = '<div class="loading">暂无出库单</div>'; return; }
             el.innerHTML = list.map(o => `
@@ -359,7 +358,7 @@
 
     async function retryOutbound(id) {
         try {
-            await fetch(`/demo/outbounds/${id}/retry`, { method: 'POST' });
+            await fetch(`demo/outbounds/${id}/retry`, { method: 'POST' });
             loadOutbounds();
         } catch (e) { alert('重试失败: ' + e.message); }
     }
@@ -381,7 +380,7 @@
 
     async function confirmResume() {
         const { businessId, type, currentState } = currentResume;
-        const url = type === 'outbound' ? '/demo/outbound/resume' : '/demo/order/resume';
+        const url = type === 'outbound' ? 'demo/outbound/resume' : 'demo/order/resume';
         const btn = document.getElementById('resumeConfirmBtn');
         btn.disabled = true; btn.textContent = '恢复中...';
         try {

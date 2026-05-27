@@ -124,19 +124,25 @@ public class StateMachineAutoConfiguration {
     }
 
     @Configuration
-    @ConditionalOnClass(org.springframework.web.servlet.DispatcherServlet.class)
+    @ConditionalOnClass(javax.servlet.Servlet.class)
     @ConditionalOnProperty(prefix = "state-machine.console", name = "enabled", havingValue = "true", matchIfMissing = true)
     static class ConsoleConfiguration {
         @Bean
-        public cn.chedejun.statemachine.management.ConsoleController consoleController(
+        public org.springframework.boot.web.servlet.ServletRegistrationBean<cn.chedejun.statemachine.management.StateMachineConsoleServlet> consoleServlet(
                 StateMachineRegistry registry,
                 InstanceRepository instanceRepository,
                 SnapshotRepository snapshotRepository,
                 InstanceExecutionService<Object> executionService,
-                ObjectMapper objectMapper) {
-            log.info("[state-machine] 控制台已启用 /statemachine");
-            return new cn.chedejun.statemachine.management.ConsoleController(
-                registry, instanceRepository, snapshotRepository, executionService, objectMapper);
+                ObjectMapper objectMapper,
+                StateMachineProperties properties) {
+            log.info("[state-machine] 控制台已启用，映射路径: {}", properties.getConsole().getUrlPattern());
+            cn.chedejun.statemachine.management.StateMachineConsoleServlet servlet =
+                new cn.chedejun.statemachine.management.StateMachineConsoleServlet(
+                    registry, instanceRepository, snapshotRepository, executionService, objectMapper);
+            org.springframework.boot.web.servlet.ServletRegistrationBean<cn.chedejun.statemachine.management.StateMachineConsoleServlet> bean =
+                new org.springframework.boot.web.servlet.ServletRegistrationBean<>(servlet, properties.getConsole().getUrlPattern());
+            bean.setLoadOnStartup(1);
+            return bean;
         }
     }
 }

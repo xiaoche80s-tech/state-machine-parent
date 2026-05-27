@@ -5,8 +5,11 @@ import cn.chedejun.statemachine.autoconfigure.StateMachineAutoConfiguration;
 import cn.chedejun.statemachine.autoconfigure.StateMachineProperties;
 import cn.chedejun.statemachine.core.*;
 import cn.chedejun.statemachine.domain.engine.StateMachine;
-import cn.chedejun.statemachine.management.ConsoleController;
+import cn.chedejun.statemachine.management.StateMachineConsoleServlet;
 import cn.chedejun.statemachine.management.StateMachineEndpoint;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
 import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
@@ -31,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Scanner;
 import java.util.List;
 import java.util.Map;
@@ -145,7 +149,34 @@ class StateMachineIntegrationTest {
     @Autowired private SnapshotRepository snapshotRepository;
     @Autowired private StateMachineProperties properties;
     @Autowired(required = false) private StateMachineEndpoint endpoint;
-    @Autowired(required = false) private ConsoleController consoleController;
+    @Autowired(required = false) private org.springframework.boot.web.servlet.ServletRegistrationBean<StateMachineConsoleServlet> consoleServlet;
+    @Autowired private ObjectMapper objectMapper;
+
+    /** 通过 Servlet 执行 GET 请求，返回解析后的 JSON */
+    @SuppressWarnings("unchecked")
+    private <T> T servletGet(String pathInfo, Class<T> responseType) throws Exception {
+        Assumptions.assumeTrue(consoleServlet != null);
+        StateMachineConsoleServlet servlet = consoleServlet.getServlet();
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/statemachine" + pathInfo);
+        req.setPathInfo(pathInfo);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        servlet.service(req, resp);
+        return objectMapper.readValue(resp.getContentAsString(), responseType);
+    }
+
+    /** 通过 Servlet 执行 POST 请求，返回解析后的 JSON */
+    @SuppressWarnings("unchecked")
+    private <T> T servletPost(String pathInfo, Object body, Class<T> responseType) throws Exception {
+        Assumptions.assumeTrue(consoleServlet != null);
+        StateMachineConsoleServlet servlet = consoleServlet.getServlet();
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/statemachine" + pathInfo);
+        req.setPathInfo(pathInfo);
+        req.setContentType("application/json");
+        req.setContent(objectMapper.writeValueAsBytes(body));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        servlet.service(req, resp);
+        return objectMapper.readValue(resp.getContentAsString(), responseType);
+    }
 
     private String resolveDefinitionId(String machineName) {
         List<cn.chedejun.statemachine.domain.data.DefinitionData> definitions = definitionRepository.findAllByName(cn.chedejun.statemachine.domain.shared.MachineName.of(machineName));
@@ -169,7 +200,7 @@ class StateMachineIntegrationTest {
         assertNotNull(definitionRepository);
         assertNotNull(properties);
         if (endpoint != null) log.info("StateMachineEndpoint is available");
-        if (consoleController != null) log.info("ConsoleController is available");
+        if (consoleServlet != null) log.info("StateMachineConsoleServlet 已注册");
     }
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(StateMachineIntegrationTest.class);
@@ -272,11 +303,10 @@ class StateMachineIntegrationTest {
 
     @Test
     @Order(30)
-    void consoleApi_listMachines() {
-        Assumptions.assumeTrue(consoleController != null);
+    void consoleApi_listMachines() throws Exception {
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        List<Map<String, Object>> machines = consoleController.listMachines();
+        List<Map<String, Object>> machines = servletGet("/api/machines.json", List.class);
         assertFalse(machines.isEmpty());
         Map<String, Object> testMachineInfo = machines.stream()
             .filter(m -> "test-machine".equals(m.get("name")))
@@ -286,57 +316,54 @@ class StateMachineIntegrationTest {
 
     @Test
     @Order(31)
-    void consoleApi_getVersions() {
-        Assumptions.assumeTrue(consoleController != null);
+    void consoleApi_getVersions() throws Exception {
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        List<cn.chedejun.statemachine.management.dto.MachineDefinitionDTO> versions = consoleController.getVersions("test-machine");
+        List<Map<String, Object>> versions = servletGet("/api/versions.json?name=test-machine", List.class);
         assertFalse(versions.isEmpty());
-        cn.chedejun.statemachine.management.dto.MachineDefinitionDTO ver = versions.get(0);
-        assertEquals("test-machine", ver.name());
-        assertFalse(ver.states().isEmpty());
-        assertFalse(ver.transitions().isEmpty());
+        Map<String, Object> ver = versions.get(0);
+        assertEquals("test-machine", ver.get("name"));
+        assertFalse(((List<?>) ver.get("states")).isEmpty());
+        assertFalse(((List<?>) ver.get("transitions")).isEmpty());
     }
 
     @Test
     @Order(32)
-    void consoleApi_getInstances() {
-        Assumptions.assumeTrue(consoleController != null);
+    void consoleApi_getInstances() throws Exception {
         testMachine.execute(new TestContext(), "biz-console-api");
 
-        Map<String, Object> result = consoleController.getInstances("test-machine", null, null, null, 0, 20);
-        assertTrue((long) result.get("total") > 0);
+        Map<String, Object> result = servletGet("/api/instances.json?name=test-machine&page=0&size=20", Map.class);
+        assertTrue(((Number) result.get("total")).longValue() > 0);
         List<?> instances = (List<?>) result.get("instances");
         assertFalse(instances.isEmpty());
-        InstanceDTO dto = (InstanceDTO) instances.get(0);
-        assertEquals("COMPLETED", dto.status());
+        Map<String, Object> dto = (Map<String, Object>) instances.get(0);
+        assertEquals("COMPLETED", dto.get("status"));
     }
 
     @Test
     @Order(33)
-    void consoleApi_getInstanceDetail() {
-        Assumptions.assumeTrue(consoleController != null);
-        ExecuteResult result = testMachine.execute(new TestContext(), "biz-instance-detail");
-        String instanceId = result.instanceId();
+    void consoleApi_getInstanceDetail() throws Exception {
+        ExecuteResult execResult = testMachine.execute(new TestContext(), "biz-instance-detail");
+        String instanceId = execResult.instanceId();
 
-        Map<String, Object> detail = consoleController.getInstanceDetail(instanceId);
+        Map<String, Object> detail = servletGet("/api/instance.json?id=" + instanceId, Map.class);
         assertNotNull(detail.get("instance"));
         List<?> snapshots = (List<?>) detail.get("snapshots");
         assertFalse(snapshots.isEmpty());
-        assertEquals("validate", ((SnapshotDTO) snapshots.get(0)).stateName());
+        assertEquals("validate", ((Map<String, Object>) snapshots.get(0)).get("stateName"));
     }
 
     @Test
     @Order(34)
-    void consoleApi_retryInstance() {
-        Assumptions.assumeTrue(consoleController != null);
+    void consoleApi_retryInstance() throws Exception {
         TestContext ctx = new TestContext();
         try { failingMachine.execute(ctx, "biz-failing-retry"); } catch (StateMachineException ignored) {}
         List<cn.chedejun.statemachine.domain.data.InstanceData> instances = instanceRepository.findByMachineName(MachineName.of("failing-machine"), 0, 10);
         String instanceId = instances.stream()
             .filter(r -> r.status() == InstanceStatus.FAILED).findFirst().orElseThrow(() -> new AssertionError("No failed instance found")).id().value();
 
-        Map<String, String> result = consoleController.retryInstance(instanceId);
+        Map<String, String> result = servletPost("/api/retry.json",
+            Collections.singletonMap("id", instanceId), Map.class);
         assertTrue(result.get("message").contains("Re-execution"));
         Optional<cn.chedejun.statemachine.domain.data.InstanceData> updated = instanceRepository.findById(InstanceId.of(instanceId));
         assertEquals(InstanceStatus.FAILED, updated.get().status());

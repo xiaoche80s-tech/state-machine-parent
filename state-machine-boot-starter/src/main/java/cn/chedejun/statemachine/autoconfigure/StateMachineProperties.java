@@ -30,5 +30,12 @@ public class StateMachineProperties {
         public void setDefaultBackoffFactor(double v) { this.defaultBackoffFactor = v; }
     }
     public static class Management { private boolean enabled = true; public boolean isEnabled() { return enabled; } public void setEnabled(boolean v) { this.enabled = v; } }
-    public static class Console { private boolean enabled = true; public boolean isEnabled() { return enabled; } public void setEnabled(boolean v) { this.enabled = v; } }
+    public static class Console {
+        private boolean enabled = true;
+        private String urlPattern = "/statemachine/*";
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean v) { this.enabled = v; }
+        public String getUrlPattern() { return urlPattern; }
+        public void setUrlPattern(String v) { this.urlPattern = v; }
+    }
 }
