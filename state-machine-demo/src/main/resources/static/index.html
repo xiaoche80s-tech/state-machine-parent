@@ -108,6 +108,7 @@
     <div class="tabs">
         <button class="tab active" data-tab="order">订单处理</button>
         <button class="tab" data-tab="outbound">出库流程</button>
+        <button class="tab" data-tab="receiving">收货流程</button>
     </div>
 
     <!-- Order Process Tab -->
@@ -142,6 +143,38 @@
                     <button class="btn btn-sm btn-outline" onclick="loadOrders()">&#x1F504; 刷新</button>
                 </div>
                 <div class="orders" id="orders"><div class="loading">加载中...</div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receiving Process Tab -->
+    <div class="tab-content" id="tab-receiving">
+        <div class="grid">
+            <div>
+                <div class="card">
+                    <h2>&#x1F4E5; 创建收货单</h2>
+                    <div class="form-group">
+                        <label>收货单号</label>
+                        <input type="text" id="rcvReceivingId" value="RCV-001">
+                    </div>
+                    <div class="form-group">
+                        <label>总数量</label>
+                        <input type="number" id="rcvTotalQty" value="100" min="1">
+                    </div>
+                    <button class="btn btn-primary" id="rcvSubmitBtn" onclick="createReceiving()">&#x1F4E5; 创建收货单</button>
+                    <div class="result" id="rcvResult"></div>
+                </div>
+                <div class="card" style="margin-top:16px">
+                    <h2>&#x1F4CA; 流程快照</h2>
+                    <div class="snapshots" id="rcvSnapshots"><div class="loading">暂无数据</div></div>
+                </div>
+            </div>
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                    <h2 style="margin:0">&#x1F4CB; 最近收货单</h2>
+                    <button class="btn btn-sm btn-outline" onclick="loadReceivings()">&#x1F504; 刷新</button>
+                </div>
+                <div class="orders" id="receivings"><div class="loading">加载中...</div></div>
             </div>
         </div>
     </div>
@@ -194,6 +227,21 @@
         <div class="form-group">
             <label>当前状态</label>
             <div style="font-family:monospace;font-size:13px;color:#555;padding:8px;background:#f9fafb;border-radius:6px" id="resumeCurrentState"></div>
+        </div>
+        <!-- Receiving resume fields -->
+        <div id="receivingResumeFields" style="display:none">
+            <div class="form-group">
+                <label>到货数量</label>
+                <input type="number" id="rcvArrivedQty" value="30" min="0">
+            </div>
+            <div class="form-group" style="display:flex;gap:24px">
+                <label style="display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" id="rcvFirstArrived"> 首次到货
+                </label>
+                <label style="display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" id="rcvAllArrived"> 全部到货
+                </label>
+            </div>
         </div>
         <div class="modal-actions">
             <button class="btn btn-sm btn-outline" onclick="closeResumeModal()">取消</button>
@@ -370,6 +418,8 @@
         currentResume = { businessId, type, currentState };
         document.getElementById('resumeBusinessId').textContent = businessId;
         document.getElementById('resumeCurrentState').textContent = currentState;
+        // Show receiving fields only for receiving type
+        document.getElementById('receivingResumeFields').style.display = type === 'receiving' ? 'block' : 'none';
         document.getElementById('resumeModal').classList.add('show');
     }
 
@@ -380,18 +430,33 @@
 
     async function confirmResume() {
         const { businessId, type, currentState } = currentResume;
-        const url = type === 'outbound' ? 'demo/outbound/resume' : 'demo/order/resume';
+        let url, body;
+        if (type === 'receiving') {
+            url = 'demo/receiving/resume';
+            body = {
+                businessId,
+                expectedCurrentState: currentState,
+                arrivedQty: parseInt(document.getElementById('rcvArrivedQty').value),
+                firstArrived: document.getElementById('rcvFirstArrived').checked,
+                allArrived: document.getElementById('rcvAllArrived').checked
+            };
+        } else {
+            url = type === 'outbound' ? 'demo/outbound/resume' : 'demo/order/resume';
+            body = { businessId, expectedCurrentState: currentState };
+        }
         const btn = document.getElementById('resumeConfirmBtn');
         btn.disabled = true; btn.textContent = '恢复中...';
         try {
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ businessId, expectedCurrentState: currentState })
+                body: JSON.stringify(body)
             });
             const data = await res.json();
             if (data.success) {
                 closeResumeModal();
-                if (type === 'outbound') loadOutbounds(); else loadOrders();
+                if (type === 'outbound') loadOutbounds();
+                else if (type === 'receiving') loadReceivings();
+                else loadOrders();
             } else {
                 alert('恢复失败: ' + (data.message || '未知错误'));
             }
@@ -402,9 +467,66 @@
         }
     }
 
+    // ===== Receiving Process =====
+    async function createReceiving() {
+        const btn = document.getElementById('rcvSubmitBtn');
+        const result = document.getElementById('rcvResult');
+        btn.disabled = true; btn.textContent = '执行中...';
+        result.className = 'result';
+
+        const body = {
+            receivingId: document.getElementById('rcvReceivingId').value,
+            totalQty: parseInt(document.getElementById('rcvTotalQty').value)
+        };
+
+        try {
+            const res = await fetch('demo/receiving', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            result.className = 'result show ' + (data.success ? (data.status === 'SUSPENDED' ? 'suspended' : 'success') : 'fail');
+            result.innerHTML = `
+                <strong>${data.success ? '&#x2705; 成功' : '&#x274C; 失败'}</strong><br>
+                收货单号: <code>${data.receivingNo}</code><br>
+                实例ID: <code>${data.instanceId}</code><br>
+                状态: ${data.status} | 当前节点: ${data.currentState || '-'}
+            `;
+            if (data.instanceId) showSnapshots(data.instanceId, 'receiving');
+            loadReceivings();
+        } catch (e) {
+            result.className = 'result show fail';
+            result.innerHTML = `<strong>&#x274C; 请求失败</strong><br>${e.message}`;
+        } finally {
+            btn.disabled = false; btn.innerHTML = '&#x1F4E5; 创建收货单';
+        }
+    }
+
+    async function loadReceivings() {
+        const el = document.getElementById('receivings');
+        try {
+            const res = await fetch('demo/receivings?limit=20');
+            const list = await res.json();
+            if (list.length === 0) { el.innerHTML = '<div class="loading">暂无收货单</div>'; return; }
+            el.innerHTML = list.map(o => `
+                <div class="order-item" onclick="showSnapshots('${o.id}','receiving')">
+                    <div class="order-info">
+                        <div class="order-id">${o.id}</div>
+                        <div style="font-size:12px;color:#9ca3af">${o.currentState} | 重试: ${o.retryCount} | businessId: ${o.businessId || '-'}</div>
+                    </div>
+                    <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+                    <div class="action-btns">
+                        ${o.status === 'SUSPENDED' && o.businessId ? `<button class="btn btn-sm btn-resume" onclick="event.stopPropagation();openResumeModal('${o.businessId}','receiving','${o.currentState}')">恢复</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (e) { el.innerHTML = '<div class="loading">加载失败</div>'; }
+    }
+
     // Initial load
     loadOrders();
     loadOutbounds();
+    loadReceivings();
 </script>
 </body>
 </html>

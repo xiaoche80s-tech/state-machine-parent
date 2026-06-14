@@ -232,7 +232,6 @@
                             <button class="filter-chip" :class="{active: machineFilterStatus===''}" @click="machineFilterStatus=''; machinePage=0; loadMachineInstances()">全部</button>
                             <button class="filter-chip filter-chip--amber" :class="{active: machineFilterStatus==='RUNNING'}" @click="machineFilterStatus='RUNNING'; machinePage=0; loadMachineInstances()">运行中</button>
                             <button class="filter-chip filter-chip--green" :class="{active: machineFilterStatus==='COMPLETED'}" @click="machineFilterStatus='COMPLETED'; machinePage=0; loadMachineInstances()">已完成</button>
-                            <button class="filter-chip filter-chip--blue" :class="{active: machineFilterStatus==='REACHED'}" @click="machineFilterStatus='REACHED'; machinePage=0; loadMachineInstances()">已到达</button>
                             <button class="filter-chip filter-chip--red" :class="{active: machineFilterStatus==='FAILED'}" @click="machineFilterStatus='FAILED'; machinePage=0; loadMachineInstances()">失败</button>
                             <button class="filter-chip filter-chip--blue" :class="{active: machineFilterStatus==='SUSPENDED'}" @click="machineFilterStatus='SUSPENDED'; machinePage=0; loadMachineInstances()">已挂起</button>
                             <input type="text" class="filter-input" placeholder="业务ID" v-model="machineFilterBusinessId" @keyup.enter="machinePage=0; loadMachineInstances()" />
@@ -301,7 +300,6 @@
                             <button class="filter-chip" :class="{active: filterStatus===''}" @click="filterStatus=''; loadInstances()">全部</button>
                             <button class="filter-chip filter-chip--amber" :class="{active: filterStatus==='RUNNING'}" @click="filterStatus='RUNNING'; loadInstances()">运行中</button>
                             <button class="filter-chip filter-chip--green" :class="{active: filterStatus==='COMPLETED'}" @click="filterStatus='COMPLETED'; loadInstances()">已完成</button>
-                            <button class="filter-chip filter-chip--blue" :class="{active: filterStatus==='REACHED'}" @click="filterStatus='REACHED'; loadInstances()">已到达</button>
                             <button class="filter-chip filter-chip--red" :class="{active: filterStatus==='FAILED'}" @click="filterStatus='FAILED'; loadInstances()">失败</button>
                         </div>
                     </div>

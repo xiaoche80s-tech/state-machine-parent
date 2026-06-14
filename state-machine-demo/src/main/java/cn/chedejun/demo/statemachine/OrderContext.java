@@ -2,8 +2,6 @@ package cn.chedejun.demo.statemachine;
 
 import cn.chedejun.statemachine.core.Context;
 
-import java.util.List;
-
 /**
  * 订单上下文
  */
@@ -14,45 +12,7 @@ public class OrderContext extends Context {
     private boolean paymentSuccess;
     private String shippingAddress;
     private boolean routeFailed;
-
-    public List<String> getAbcList() {
-        return abcList;
-    }
-
-    public void setAbcList(List<String> abcList) {
-        this.abcList = abcList;
-    }
-
-    List<String>  abcList;
-    public UserInfo getUser() {
-        return user;
-    }
-
-    public void setUser(UserInfo user) {
-        this.user = user;
-    }
-
     private UserInfo user;
-
-    private UserInfo user2;
-
-    private String abcd;
-
-    public UserInfo getUser2() {
-        return user2;
-    }
-
-    public void setUser2(UserInfo user2) {
-        this.user2 = user2;
-    }
-
-    public String getAbcd() {
-        return abcd;
-    }
-
-    public void setAbcd(String abcd) {
-        this.abcd = abcd;
-    }
 
     public OrderContext() {}
 
@@ -62,27 +22,16 @@ public class OrderContext extends Context {
         this.amount = amount;
     }
 
-    public static class UserInfo{
+    public static class UserInfo {
         private String userName;
-
         private String userPhone;
 
-        public String getUserName() {
-            return userName;
-        }
-
-        public void setUserName(String userName) {
-            this.userName = userName;
-        }
-
-        public String getUserPhone() {
-            return userPhone;
-        }
-
-        public void setUserPhone(String userPhone) {
-            this.userPhone = userPhone;
-        }
+        public String getUserName() { return userName; }
+        public void setUserName(String userName) { this.userName = userName; }
+        public String getUserPhone() { return userPhone; }
+        public void setUserPhone(String userPhone) { this.userPhone = userPhone; }
     }
+
     public String getOrderId() { return orderId; }
     public void setOrderId(String orderId) { this.orderId = orderId; }
     public int getStock() { return stock; }
@@ -95,4 +44,6 @@ public class OrderContext extends Context {
     public void setShippingAddress(String shippingAddress) { this.shippingAddress = shippingAddress; }
     public boolean isRouteFailed() { return routeFailed; }
     public void setRouteFailed(boolean routeFailed) { this.routeFailed = routeFailed; }
+    public UserInfo getUser() { return user; }
+    public void setUser(UserInfo user) { this.user = user; }
 }

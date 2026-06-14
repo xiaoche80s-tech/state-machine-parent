@@ -12,6 +12,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import cn.chedejun.statemachine.management.dto.InstanceDTO;
 import cn.chedejun.statemachine.management.dto.SnapshotDTO;
+import cn.chedejun.statemachine.domain.data.InstanceData;
 import cn.chedejun.statemachine.domain.repository.DefinitionRepository;
 import cn.chedejun.statemachine.domain.repository.InstanceRepository;
 import cn.chedejun.statemachine.domain.repository.SnapshotRepository;
@@ -124,12 +125,28 @@ class StateMachineIntegrationTest {
             registry.register(machine);
             return new StateMachineFacade<>(machine, executionService);
         }
+
+        @Bean
+        public StateMachineFacade<TestContext> multiResumeMachine(InstanceExecutionService<TestContext> executionService, StateMachineRegistry registry) {
+            StateMachine<TestContext> machine = StateMachineBuilder.<TestContext>builder("multi-resume-machine")
+                .contextClass(TestContext.class)
+                .state("init", ctx -> ctx.setValidated(true))
+                .suspendState("await-items", ctx -> { /* action 每次 resume 时执行 */ },
+                    ctx -> ctx.getItemCount() >= 3)  // resumeCondition: 需要累计3个item
+                .state("done", ctx -> ctx.setCompleted(true))
+                .transition("init", "await-items", ctx -> true)
+                .transition("await-items", "done", ctx -> true)
+                .build();
+            registry.register(machine);
+            return new StateMachineFacade<>(machine, executionService);
+        }
     }
 
     static class TestContext extends Context {
         private boolean validated;
         private boolean processed;
         private boolean completed;
+        private int itemCount;
 
         public boolean isValidated() { return validated; }
         public void setValidated(boolean v) { this.validated = v; }
@@ -137,11 +154,14 @@ class StateMachineIntegrationTest {
         public void setProcessed(boolean v) { this.processed = v; }
         public boolean isCompleted() { return completed; }
         public void setCompleted(boolean v) { this.completed = v; }
+        public int getItemCount() { return itemCount; }
+        public void setItemCount(int itemCount) { this.itemCount = itemCount; }
     }
 
     @Autowired private StateMachineFacade<TestContext> testMachine;
     @Autowired private StateMachineFacade<TestContext> failingMachine;
     @Autowired private StateMachineFacade<TestContext> suspendMachine;
+    @Autowired private StateMachineFacade<TestContext> multiResumeMachine;
     @Autowired private StateMachineRegistry registry;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private DefinitionRepository definitionRepository;
@@ -402,7 +422,7 @@ class StateMachineIntegrationTest {
         assertEquals("SUSPENDED", result.status());
         assertEquals("wait-approval", result.currentState());
         assertTrue(ctx.isValidated());
-        assertTrue(ctx.isProcessed());
+        assertFalse(ctx.isProcessed());
         assertFalse(ctx.isCompleted());
 
         suspendMachine.resumeByBusinessId("test-biz-001", "wait-approval", c -> {});
@@ -465,6 +485,42 @@ class StateMachineIntegrationTest {
         Optional<cn.chedejun.statemachine.domain.data.InstanceData> instance = instanceRepository.findByBusinessId(MachineName.of("suspend-machine"), BusinessId.of("test-biz-003"));
         assertTrue(instance.isPresent());
         assertEquals(InstanceStatus.SUSPENDED, instance.get().status());
+    }
+
+    // ===== 多次 resume =====
+
+    @Test
+    @Order(60)
+    void resume_multiResume_staysSuspendedUntilConditionMet() {
+        TestContext ctx = new TestContext();
+        ExecuteResult result = multiResumeMachine.execute(ctx, "multi-resume-biz-001");
+
+        // execute 后应在 await-items 挂起
+        assertEquals("SUSPENDED", result.status());
+        assertEquals("await-items", result.currentState());
+
+        // 第1次 resume：itemCount=1, 条件不满足，应保持 SUSPENDED
+        multiResumeMachine.resumeByBusinessId("multi-resume-biz-001", "await-items", c -> c.setItemCount(1));
+        Optional<InstanceData> inst1 = instanceRepository.findByBusinessId(
+            MachineName.of("multi-resume-machine"), BusinessId.of("multi-resume-biz-001"));
+        assertTrue(inst1.isPresent());
+        assertEquals(InstanceStatus.SUSPENDED, inst1.get().status());
+        assertEquals("await-items", inst1.get().currentState().value());
+
+        // 第2次 resume：itemCount=2, 条件仍不满足，保持 SUSPENDED
+        multiResumeMachine.resumeByBusinessId("multi-resume-biz-001", "await-items", c -> c.setItemCount(2));
+        Optional<InstanceData> inst2 = instanceRepository.findByBusinessId(
+            MachineName.of("multi-resume-machine"), BusinessId.of("multi-resume-biz-001"));
+        assertTrue(inst2.isPresent());
+        assertEquals(InstanceStatus.SUSPENDED, inst2.get().status());
+
+        // 第3次 resume：itemCount=3, 条件满足，流转到 done → COMPLETED
+        multiResumeMachine.resumeByBusinessId("multi-resume-biz-001", "await-items", c -> c.setItemCount(3));
+        Optional<InstanceData> inst3 = instanceRepository.findByBusinessId(
+            MachineName.of("multi-resume-machine"), BusinessId.of("multi-resume-biz-001"));
+        assertTrue(inst3.isPresent());
+        assertEquals(InstanceStatus.COMPLETED, inst3.get().status());
+        assertEquals("done", inst3.get().currentState().value());
     }
 
     // ===== 数据验证 =====

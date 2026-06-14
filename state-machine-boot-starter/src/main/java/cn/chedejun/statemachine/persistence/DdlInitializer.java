@@ -37,6 +37,8 @@ public class DdlInitializer {
                 String sql = readStream(stream);
                 for (String stmt : sql.split(";")) { String t = stmt.trim(); if (!t.isEmpty()) template.execute(t); }
                 log.info("[state-machine] 数据表初始化完成，使用 {}", resourcePath);
+                // 迁移已有表的 executed_at 精度至微秒级
+                migrateSnapshotTimestampPrecision(template, dbType);
             }
         } catch (Exception e) {
             log.error("[state-machine] 数据表初始化失败", e);
@@ -61,5 +63,32 @@ public class DdlInitializer {
             if (url.contains("postgresql") || url.contains("postgres")) return "postgresql";
             return "h2";
         } catch (Exception e) { return "h2"; }
+    }
+
+    /**
+     * 将已有快照表的 executed_at 列精度提升至微秒级（TIMESTAMP(6)）。
+     * 使用 try-catch 实现幂等：列已为 TIMESTAMP(6) 时静默忽略。
+     */
+    private void migrateSnapshotTimestampPrecision(JdbcTemplate template, String dbType) {
+        try {
+            String alterSql;
+            switch (dbType) {
+                case "mysql":
+                    alterSql = "ALTER TABLE state_machine_snapshots MODIFY COLUMN executed_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6)";
+                    break;
+                case "postgresql":
+                    alterSql = "ALTER TABLE state_machine_snapshots ALTER COLUMN executed_at TYPE TIMESTAMP(6)";
+                    break;
+                case "h2":
+                    alterSql = "ALTER TABLE state_machine_snapshots ALTER COLUMN executed_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6)";
+                    break;
+                default:
+                    return;
+            }
+            template.execute(alterSql);
+            log.info("[state-machine] 已将 snapshots.executed_at 精度提升至微秒级");
+        } catch (Exception e) {
+            log.debug("[state-machine] executed_at 精度迁移跳过 (可能已是最新): {}", e.getMessage());
+        }
     }
 }

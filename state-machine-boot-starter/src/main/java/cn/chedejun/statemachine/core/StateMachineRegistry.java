@@ -37,6 +37,7 @@ public class StateMachineRegistry {
                 m.put("name", s.getName());
                 m.put("actionClass", s.getAction().getClass().getName());
                 if (s.isSuspended()) m.put("suspended", true);
+                if (s.hasResumeCondition()) m.put("hasResumeCondition", true);
                 return m;
             }).collect(Collectors.toList());
         List<Map<String, Object>> transitionEntries = machine.getTransitions().stream()

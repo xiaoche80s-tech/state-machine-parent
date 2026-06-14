@@ -27,6 +27,7 @@ public class StateMachineBuilder<C> {
 
     public StateMachineBuilder<C> state(String name, Action<C> action) { states.add(new State<>(name, action)); return this; }
     public StateMachineBuilder<C> suspendState(String name, Action<C> action) { states.add(new State<>(name, action, true)); return this; }
+    public StateMachineBuilder<C> suspendState(String name, Action<C> action, Condition<C> resumeCondition) { states.add(new State<>(name, action, true, resumeCondition)); return this; }
 
     public StateMachineBuilder<C> transition(String from, String to) { return transition(from, to, ctx -> true); }
     public StateMachineBuilder<C> transition(String from, String to, Condition<C> condition) {

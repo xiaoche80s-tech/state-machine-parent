@@ -24,7 +24,7 @@
         <dependency>
             <groupId>cn.chedejun</groupId>
             <artifactId>state-machine-boot-starter</artifactId>
-            <version>1.0.1-jdk8.release</version>
+            <version>1.0.2-jdk8.release</version>
         </dependency>
 
         <!-- Spring Boot -->

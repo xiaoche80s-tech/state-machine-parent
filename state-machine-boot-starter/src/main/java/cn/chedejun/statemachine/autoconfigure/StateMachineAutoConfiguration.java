@@ -23,6 +23,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,16 +43,19 @@ public class StateMachineAutoConfiguration {
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
+    @DependsOn("ddlInitializer")
     public InstanceRepository instanceRepository(JdbcTemplate jdbcTemplate) {
         return new JdbcInstanceRepository(jdbcTemplate);
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
+    @DependsOn("ddlInitializer")
     public SnapshotRepository snapshotRepository(JdbcTemplate jdbcTemplate) {
         return new JdbcSnapshotRepository(jdbcTemplate);
     }
 
     @Bean @ConditionalOnBean(DataSource.class)
+    @DependsOn("ddlInitializer")
     public DefinitionRepository definitionRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         return new JdbcDefinitionRepository(jdbcTemplate, objectMapper);
     }

@@ -4,8 +4,11 @@ import cn.chedejun.demo.dto.OrderCreateRequest;
 import cn.chedejun.demo.dto.OrderResumeRequest;
 import cn.chedejun.demo.dto.OutboundCreateRequest;
 import cn.chedejun.demo.dto.OutboundResumeRequest;
+import cn.chedejun.demo.dto.ReceivingCreateRequest;
+import cn.chedejun.demo.dto.ReceivingResumeRequest;
 import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.demo.statemachine.OutboundContext;
+import cn.chedejun.demo.statemachine.ReceivingContext;
 import cn.chedejun.statemachine.core.ExecuteResult;
 import cn.chedejun.statemachine.core.StateMachineException;
 import cn.chedejun.statemachine.domain.data.InstanceData;
@@ -31,15 +34,18 @@ public class DemoController {
 
     private final StateMachineFacade<OrderContext> orderMachine;
     private final StateMachineFacade<OutboundContext> outboundMachine;
+    private final StateMachineFacade<ReceivingContext> receivingMachine;
     private final InstanceRepository instanceRepository;
     private final SnapshotRepository snapshotRepository;
 
     public DemoController(StateMachineFacade<OrderContext> orderMachine,
                           StateMachineFacade<OutboundContext> outboundMachine,
+                          StateMachineFacade<ReceivingContext> receivingMachine,
                           InstanceRepository instanceRepository,
                           SnapshotRepository snapshotRepository) {
         this.orderMachine = orderMachine;
         this.outboundMachine = outboundMachine;
+        this.receivingMachine = receivingMachine;
         this.instanceRepository = instanceRepository;
         this.snapshotRepository = snapshotRepository;
     }
@@ -55,12 +61,7 @@ public class DemoController {
         String address = req.getAddress() != null && !req.getAddress().trim().isEmpty() ? req.getAddress() : "北京市朝阳区";
 
         OrderContext ctx = new OrderContext(orderId, stock, amount);
-        OrderContext.UserInfo userInfo = new OrderContext.UserInfo();
-        userInfo.setUserName("chedejun");
-        userInfo.setUserPhone("abcd123");
         ctx.setShippingAddress(address);
-        ctx.put("abc","1111111111");
-        ctx.setUser(userInfo);
 
 
         try {
@@ -333,6 +334,132 @@ public class DemoController {
         InstanceData updated = instanceRepository.findById(InstanceId.of(id)).orElse(null);
         Map<String, String> resp = new LinkedHashMap<>();
         resp.put("message", "已重新执行，当前状态: " + (updated != null ? updated.status() : "unknown"));
+        return resp;
+    }
+
+    // ===== 收货流程（多挂起点验证） =====
+
+    /**
+     * 创建收货单
+     */
+    @PostMapping("/receiving")
+    public Map<String, Object> createReceiving(@RequestBody ReceivingCreateRequest req) {
+        String receivingNo = "RCV-" + UUID.randomUUID().toString().substring(0, 8);
+        int totalQty = req.getTotalQty() != 0 ? req.getTotalQty() : 100;
+
+        ReceivingContext ctx = new ReceivingContext(receivingNo, totalQty);
+
+        try {
+            ExecuteResult result = receivingMachine.execute(ctx, receivingNo);
+            log.info("[demo] Receiving created: receivingNo={}, instanceId={}, status={}", receivingNo, result.instanceId(), result.status());
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", true);
+            resp.put("receivingNo", receivingNo);
+            resp.put("instanceId", result.instanceId());
+            resp.put("status", result.status());
+            resp.put("currentState", result.currentState());
+            return resp;
+        } catch (StateMachineException e) {
+            log.error("[demo] Receiving creation failed: receivingNo={}", receivingNo, e);
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", false);
+            resp.put("status", "FAILED");
+            resp.put("message", e.getMessage());
+            return resp;
+        }
+    }
+
+    /**
+     * 恢复挂起的收货实例
+     */
+    @PostMapping("/receiving/resume")
+    public Map<String, Object> resumeReceiving(@RequestBody ReceivingResumeRequest req) {
+        if (req.getBusinessId() == null || req.getBusinessId().trim().isEmpty()) {
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", false);
+            resp.put("message", "缺少 businessId 参数");
+            return resp;
+        }
+        if (req.getExpectedCurrentState() == null || req.getExpectedCurrentState().trim().isEmpty()) {
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", false);
+            resp.put("message", "缺少 expectedCurrentState 参数");
+            return resp;
+        }
+
+        try {
+            receivingMachine.resumeByBusinessId(req.getBusinessId(), req.getExpectedCurrentState(), ctx -> {
+                ctx.setArrivedQty(req.getArrivedQty());
+                ctx.setFirstArrived(req.isFirstArrived());
+                ctx.setAllArrived(req.isAllArrived());
+            });
+            log.info("[demo] Receiving resumed: businessId={}", req.getBusinessId());
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", true);
+            resp.put("businessId", req.getBusinessId());
+            resp.put("message", "收货已恢复执行");
+            return resp;
+        } catch (StateMachineException e) {
+            log.error("[demo] Receiving resume failed: businessId={}", req.getBusinessId(), e);
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("success", false);
+            resp.put("status", "FAILED");
+            resp.put("message", e.getMessage());
+            return resp;
+        }
+    }
+
+    /**
+     * 查询最近收货单
+     */
+    @GetMapping("/receivings")
+    public List<Map<String, Object>> listReceivings(@RequestParam(defaultValue = "10") int limit) {
+        return instanceRepository.findByMachineName(MachineName.of("receiving-process"), 0, limit).stream()
+            .map(r -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", r.id().value());
+                m.put("businessId", r.businessId() != null ? r.businessId().value() : "");
+                m.put("status", r.status().name());
+                m.put("currentState", r.currentState().value());
+                m.put("retryCount", r.retryCount());
+                m.put("errorMessage", r.errorMessage() != null ? r.errorMessage() : "");
+                m.put("createdAt", r.createdAt().toString());
+                return m;
+            }).collect(Collectors.toList());
+    }
+
+    /**
+     * 收货执行详情
+     */
+    @GetMapping("/receivings/{id}")
+    public Map<String, Object> receivingDetail(@PathVariable String id) {
+        Optional<InstanceData> instance = instanceRepository.findById(InstanceId.of(id));
+        if (!instance.isPresent()) {
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("error", "Instance not found");
+            return resp;
+        }
+
+        List<Map<String, Object>> snaps = snapshotRepository.findByInstanceId(InstanceId.of(id)).stream()
+            .map(s -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("stateName", s.stateName().value());
+                m.put("status", s.status().name());
+                m.put("attempt", s.attempt());
+                m.put("executedAt", s.executedAt().toString());
+                m.put("errorMessage", s.errorMessage() != null ? s.errorMessage() : "");
+                return m;
+            }).collect(Collectors.toList());
+
+        InstanceData inst = instance.get();
+        Map<String, Object> instMap = new LinkedHashMap<>();
+        instMap.put("id", inst.id().value());
+        instMap.put("status", inst.status().name());
+        instMap.put("businessId", inst.businessId() != null ? inst.businessId().value() : "");
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("instance", instMap);
+        resp.put("snapshots", snaps);
         return resp;
     }
 

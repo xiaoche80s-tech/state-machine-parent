@@ -123,32 +123,26 @@ public class InstanceExecutionService<C> {
                 String.format("State mismatch: expected '%s', actual '%s'", expectedState.value(), data.currentState().value()));
 
         List<SnapshotData> snapshots = snapshotRepo.findByInstanceId(data.id());
-        // 修复：只取 SUCCESS 类型的 NODE 快照（ROUTE 快照的 outputJson 是目标状态名而非上下文 JSON）
+        // 排除当前挂起点自身的快照，取进入该挂起点前上一个状态的最后一个 SUCCESS output（防累积）
         String contextJson = snapshots.stream()
-            .filter(s -> s.status() == ExecutionStatus.SUCCESS && !SNAPSHOT_TYPE_ROUTE.equals(s.snapshotType()))
+            .filter(s -> s.status() == ExecutionStatus.SUCCESS
+                && !SNAPSHOT_TYPE_ROUTE.equals(s.snapshotType())
+                && !s.stateName().value().equals(data.currentState().value()))
             .reduce((first, second) -> second)
             .map(SnapshotData::outputJson)
             .orElse("{}");
         C context = deserialize(contextJson, machine);
         contextMerger.accept(context);
 
-        Optional<String> nextState = machine.findNextState(context, data.currentState().value());
-        if (nextState.isPresent()) {
-            String nextStateName = nextState.get();
-            // 修复：将 CAS 和状态更新合并为单次原子 SQL，避免之前冗余的 save() 绕过了乐观锁
-            int updated = instanceRepo.tryMarkRunningFromSuspended(data.id(), StateName.of(nextStateName));
-            if (updated == 0)
-                throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
-            executeLoop(data.id(), context, StateName.of(nextStateName), machine);
-        } else {
-            if (machine.hasOutgoingTransitions(data.currentState().value())) {
-                String errorMsg = buildTransitionError(data.currentState().value(), machine.getTransitions());
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.FAILED, errorMsg));
-                throw new StateMachineException(errorMsg);
-            } else {
-                instanceRepo.save(data.withUpdatedState(data.currentState(), InstanceStatus.COMPLETED, null));
-            }
-        }
+        // CAS：标记为 RUNNING，保持当前 suspend 状态
+        int updated = instanceRepo.tryMarkRunningFromSuspended(data.id(), data.currentState());
+        if (updated == 0)
+            throw new StateMachineException("Instance already resumed or not suspended: " + data.id());
+
+        // 执行 suspend 节点的 action + 检查条件 + 路由
+        State<C> suspendState = machine.findState(data.currentState().value())
+            .orElseThrow(() -> new StateMachineException.StateNotFoundException(data.currentState().value()));
+        executeSuspendStateAction(data.id(), suspendState, context, machine);
     }
 
     /**
@@ -169,11 +163,11 @@ public class InstanceExecutionService<C> {
                     return new StateMachineException.StateNotFoundException(stateNameRef);
                 });
 
-            current = executeAction(current, state, context, machine);
-
             if (state.isSuspended()) {
                 return instanceRepo.save(current.withUpdatedState(StateName.of(currentStateName), InstanceStatus.SUSPENDED, null));
             }
+
+            current = executeAction(current, state, context, machine);
 
             Optional<String> nextState = machine.findNextState(context, currentStateName);
             if (!nextState.isPresent()) {
@@ -259,10 +253,48 @@ public class InstanceExecutionService<C> {
         }
     }
 
+    /**
+     * 执行 suspend 节点的 action 并根据 resumeCondition 决定流转或重新挂起
+     */
+    private void executeSuspendStateAction(InstanceId instanceId, State<C> state, C context, StateMachine<C> machine) {
+        InstanceData current = requireInstance(instanceId);
+        current = executeAction(current, state, context, machine);
+
+        // 检查 resumeCondition：条件不满足则回到 SUSPENDED
+        if (state.hasResumeCondition() && !state.getResumeCondition().test(context)) {
+            instanceRepo.save(current.withUpdatedState(StateName.of(state.getName()), InstanceStatus.SUSPENDED, null));
+            return;
+        }
+
+        // 条件满足（或无 resumeCondition）：路由到下一状态
+        Optional<String> nextState = machine.findNextState(context, state.getName());
+        if (nextState.isPresent()) {
+            String nextStateName = nextState.get();
+            snapshotRepo.save(ExecutionSnapshot.createRoute(
+                SnapshotId.generate(), instanceId, StateName.of(state.getName()),
+                serialize(context), StateName.of(nextStateName)));
+            instanceRepo.save(current.withUpdatedState(StateName.of(nextStateName), InstanceStatus.RUNNING, null));
+            executeLoop(instanceId, context, StateName.of(nextStateName), machine);
+        } else {
+            if (machine.hasOutgoingTransitions(state.getName())) {
+                failWithTransitionError(instanceId, state.getName(), context, machine);
+            } else {
+                instanceRepo.save(current.withUpdatedState(StateName.of(state.getName()), InstanceStatus.COMPLETED, null));
+            }
+        }
+    }
+
     private void resetToRunningAndExecute(InstanceData data, C context, String startState, StateMachine<C> machine) {
         instanceRepo.save(data.withUpdatedState(StateName.of(startState), InstanceStatus.RUNNING, null)
             .withIncrementedRetry(0, null));
-        executeLoop(data.id(), context, StateName.of(startState), machine);
+
+        // 如果目标状态是 suspend 节点，使用 suspend 专用逻辑（执行 action + 检查条件）
+        Optional<State<C>> stateOpt = machine.findState(startState);
+        if (stateOpt.isPresent() && stateOpt.get().isSuspended()) {
+            executeSuspendStateAction(data.id(), stateOpt.get(), context, machine);
+        } else {
+            executeLoop(data.id(), context, StateName.of(startState), machine);
+        }
     }
 
     private void failWithTransitionError(InstanceId instanceId, String currentStateName, C context, StateMachine<C> machine) {

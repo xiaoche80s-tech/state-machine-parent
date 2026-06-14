@@ -4,11 +4,10 @@ import cn.chedejun.demo.statemachine.OrderContext;
 import cn.chedejun.statemachine.application.InstanceExecutionService;
 import cn.chedejun.statemachine.core.RetryPolicy;
 import cn.chedejun.statemachine.core.StateMachineBuilder;
-import cn.chedejun.statemachine.core.StateMachineException;
 import cn.chedejun.statemachine.core.StateMachineRegistry;
 import cn.chedejun.statemachine.domain.engine.StateMachine;
 import cn.chedejun.statemachine.interfaces.StateMachineFacade;
-import org.slf4j.Logger;
+
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -64,9 +63,9 @@ public class OrderConfig {
     }
 
     private void awaitShipConfirm(OrderContext ctx) {
-        log("等待发货确认：orderId=%s, 状态=挂起，等待恢复执行", ctx.getOrderId());
-        // 挂起点：此处会暂停执行，等待外部调用 resumeByBusinessId 恢复
-        // 业务场景：需要人工审核订单、等待仓库确认库存、或等待第三方系统响应
+        // 此 action 在 resume 时执行，而非进入挂起状态时
+        // 业务场景：外部信号恢复后的确认处理
+        log("发货确认恢复处理：orderId=%s", ctx.getOrderId());
     }
 
     private void shipOrder(OrderContext ctx) {
