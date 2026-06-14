@@ -1,6 +1,7 @@
 package cn.chedejun.statemachine.interfaces;
 
 import cn.chedejun.statemachine.application.InstanceExecutionService;
+import cn.chedejun.statemachine.core.Action;
 import cn.chedejun.statemachine.core.ExecuteResult;
 import cn.chedejun.statemachine.domain.engine.StateMachine;
 import cn.chedejun.statemachine.domain.shared.BusinessId;
@@ -43,6 +44,25 @@ public class StateMachineFacade<C> {
     public void resumeByInstanceId(String instanceId, String expectedState, Consumer<C> merger) {
         executionService.resumeByInstanceId(machine, InstanceId.of(instanceId),
             StateName.of(expectedState), merger);
+    }
+
+    /**
+     * 推进失败的实例：用新的 Action 替代原失败的 Action 执行
+     * 适用于 action 执行失败（非原子操作）后，业务数据已手动修复，需要用新 action 替代并继续流转的场景
+     *
+     * @param instanceId 实例 ID
+     * @param newAction 替代失败 action 的新 action
+     * @param contextMerger 用于调整恢复后上下文的合并函数
+     */
+    public void advance(String instanceId, Action<C> newAction, Consumer<C> contextMerger) {
+        executionService.advance(machine, InstanceId.of(instanceId), newAction, contextMerger);
+    }
+
+    /**
+     * 推进失败的实例（不调整上下文）
+     */
+    public void advance(String instanceId, Action<C> newAction) {
+        executionService.advance(machine, InstanceId.of(instanceId), newAction, ctx -> {});
     }
 
     public String getName() { return machine.getName(); }

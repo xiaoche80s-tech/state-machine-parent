@@ -17,7 +17,7 @@ public class ExecutionSnapshot extends AggregateRoot<SnapshotId> {
     private final ExecutionStatus status;
     private final String errorMessage;
     private final int attempt;
-    private final String snapshotType; // "NODE" or "ROUTE"
+    private final String snapshotType; // "NODE", "ROUTE" or "ADVANCE"
     private final Instant executedAt;
 
     private ExecutionSnapshot(SnapshotId id, InstanceId instanceId, StateName stateName,
@@ -58,6 +58,24 @@ public class ExecutionSnapshot extends AggregateRoot<SnapshotId> {
                                                        String contextJson, String errorMessage) {
         return new ExecutionSnapshot(id, instanceId, fromState, contextJson, null,
                                       ExecutionStatus.FAILED, errorMessage, 0, "ROUTE");
+    }
+
+    /**
+     * 创建 ADVANCE 操作的成功快照
+     */
+    public static ExecutionSnapshot createAdvanceSuccess(SnapshotId id, InstanceId instanceId, StateName stateName,
+                                                          String inputJson, String outputJson, int attempt) {
+        return new ExecutionSnapshot(id, instanceId, stateName, inputJson, outputJson,
+                                      ExecutionStatus.SUCCESS, null, attempt, "ADVANCE");
+    }
+
+    /**
+     * 创建 ADVANCE 操作的失败快照
+     */
+    public static ExecutionSnapshot createAdvanceFailed(SnapshotId id, InstanceId instanceId, StateName stateName,
+                                                         String inputJson, String errorMessage, int attempt) {
+        return new ExecutionSnapshot(id, instanceId, stateName, inputJson, null,
+                                      ExecutionStatus.FAILED, errorMessage, attempt, "ADVANCE");
     }
 
     public InstanceId instanceId() { return instanceId; }

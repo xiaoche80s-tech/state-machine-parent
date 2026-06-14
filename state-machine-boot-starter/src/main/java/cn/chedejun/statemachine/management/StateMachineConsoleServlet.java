@@ -146,6 +146,9 @@ public class StateMachineConsoleServlet extends HttpServlet {
                 case "/api/retry.json":
                     json = retryInstance(body);
                     break;
+                case "/api/advance.json":
+                    json = advanceInstance(body);
+                    break;
                 default:
                     json = errorJson("未知接口: " + path);
             }
@@ -344,6 +347,60 @@ public class StateMachineConsoleServlet extends HttpServlet {
             Map<String, String> result = new LinkedHashMap<>();
             result.put("message", "Re-execution failed: " + e.getMessage());
             return objectMapper.writeValueAsString(result);
+        }
+    }
+
+    /**
+     * 推进失败的实例：用空 action 替代原失败的 action，继续状态机流转
+     * 控制台场景主要用于测试/调试，实际业务应通过 Java API 调用 advance
+     */
+    @SuppressWarnings("unchecked")
+    private String advanceInstance(Map<String, Object> body) throws Exception {
+        String id = (String) body.get("id");
+        if (id == null || id.isEmpty()) {
+            return errorJson("缺少参数: id");
+        }
+        Optional<InstanceData> inst = instanceRepository.findById(InstanceId.of(id));
+        if (!inst.isPresent()) {
+            return errorJson("实例不存在");
+        }
+        if (inst.get().status() != InstanceStatus.FAILED) {
+            return errorJson("只能对 FAILED 状态的实例执行 advance，当前状态: " + inst.get().status());
+        }
+        Optional<? extends StateMachine<?>> machineOpt = registry.getLatest(inst.get().machineName().value());
+        if (!machineOpt.isPresent()) {
+            return errorJson("状态机不存在: " + inst.get().machineName().value());
+        }
+        try {
+            StateMachine<Object> m = (StateMachine<Object>) machineOpt.get();
+            String contextJson = (String) body.get("contextJson");
+
+            // 控制台 advance 使用空 action，仅用于推进状态
+            cn.chedejun.statemachine.core.Action<Object> action = ctx -> {
+                log.info("[state-machine] ADVANCE 执行空操作 instanceId={}", id);
+            };
+
+            java.util.function.Consumer<Object> merger = ctx -> {
+                if (contextJson != null && !contextJson.trim().isEmpty()) {
+                    try {
+                        objectMapper.readerForUpdating(ctx).readValue(contextJson);
+                    } catch (Exception e) {
+                        throw new RuntimeException("解析 contextJson 失败: " + e.getMessage(), e);
+                    }
+                }
+            };
+
+            executionService.advance(m, InstanceId.of(id), action, merger);
+
+            Optional<InstanceData> updated = instanceRepository.findById(InstanceId.of(id));
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("message", "已推进执行");
+            result.put("currentState", updated.map(i -> i.currentState().value()).orElse("unknown"));
+            return objectMapper.writeValueAsString(result);
+        } catch (Exception e) {
+            log.error("[state-machine] 推进实例失败 id={}", id, e);
+            return errorResultJson(false, e.getMessage(), null);
         }
     }
 

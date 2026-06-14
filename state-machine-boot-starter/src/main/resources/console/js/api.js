@@ -30,5 +30,14 @@ const API = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         })).json();
+    },
+    async advanceInstance(id, contextJson) {
+        const body = { id };
+        if (contextJson) body.contextJson = contextJson;
+        return (await fetch('api/advance.json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })).json();
     }
 };

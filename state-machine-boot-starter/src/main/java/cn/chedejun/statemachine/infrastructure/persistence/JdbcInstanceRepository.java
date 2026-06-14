@@ -94,6 +94,13 @@ public class JdbcInstanceRepository implements InstanceRepository {
     }
 
     @Override
+    public int tryMarkRunningFromFailed(InstanceId id) {
+        return jdbcTemplate.update(
+            "UPDATE state_machine_instances SET status='RUNNING', retry_count=0, error_message=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='FAILED'",
+            id.value());
+    }
+
+    @Override
     public List<InstanceData> findByMachineName(MachineName name, int offset, int limit) {
         return jdbcTemplate.query(
             "SELECT * FROM state_machine_instances WHERE machine_name=? ORDER BY created_at DESC LIMIT ? OFFSET ?",

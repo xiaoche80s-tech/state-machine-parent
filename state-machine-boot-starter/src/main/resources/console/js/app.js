@@ -111,6 +111,17 @@ createApp({
         const mergeError = ref('');
         const mergeSuccess = ref(false);
 
+        // Advance modal
+        const advanceModalVisible = ref(false);
+        const advanceForm = ref({ instanceId: '', currentState: '', contextJson: '' });
+        const advanceLoading = ref(false);
+        const advanceContextMode = ref('tree');
+        const advanceContextTree = ref([]);
+        const advanceContextError = ref('');
+        const advanceMergeText = ref('');
+        const advanceMergeError = ref('');
+        const advanceMergeSuccess = ref(false);
+
         function parseJsonTree(obj, path = '') {
             if (obj === null || obj === undefined) return [{ key: path || '(root)', type: 'null', value: 'null', editable: false }];
             const nodes = [];
@@ -330,9 +341,10 @@ createApp({
                 const result = await API.resumeInstance(resumeForm.value.instanceId, resumeForm.value.expectedState, contextJson);
                 if (result.success) {
                     showToast('已恢复执行');
+                    const savedInstanceId = resumeForm.value.instanceId;
                     closeResumeModal();
                     if (currentView.value === 'instance') {
-                        const detail = await API.getInstanceDetail(resumeForm.value.instanceId);
+                        const detail = await API.getInstanceDetail(savedInstanceId);
                         if (detail.instance) {
                             instanceDetail.value = detail;
                             await nextTick();
@@ -480,6 +492,120 @@ createApp({
         async function retryInstance(id) {
             await API.retryInstance(id);
             instanceDetail.value = await API.getInstanceDetail(id);
+        }
+
+        async function advanceInstance(id) {
+            advanceForm.value = { instanceId: id, currentState: '', contextJson: '' };
+            advanceContextMode.value = 'tree';
+            advanceContextError.value = '';
+            advanceMergeText.value = '';
+            advanceMergeError.value = '';
+            advanceMergeSuccess.value = false;
+            advanceModalVisible.value = true;
+            // Fetch instance detail to get last SUCCESS snapshot outputJson
+            try {
+                const detail = await API.getInstanceDetail(id);
+                if (detail.instance) {
+                    advanceForm.value.currentState = detail.instance.currentState || '';
+                }
+                if (detail.snapshots && detail.snapshots.length > 0) {
+                    // 取最后一个 SUCCESS 状态的 NODE 快照的 outputJson
+                    let contextObj = {};
+                    for (let i = detail.snapshots.length - 1; i >= 0; i--) {
+                        const snap = detail.snapshots[i];
+                        if (snap.status === 'SUCCESS' && snap.type === 'NODE' && snap.output) {
+                            try { contextObj = JSON.parse(snap.output); break; } catch (e) { /* ignore */ }
+                        }
+                    }
+                    advanceForm.value.contextJson = JSON.stringify(contextObj, null, 2);
+                    advanceContextTree.value = parseJsonTree(contextObj);
+                } else {
+                    advanceForm.value.contextJson = '{}';
+                    advanceContextTree.value = [];
+                }
+            } catch (e) {
+                advanceForm.value.contextJson = '{}';
+                advanceContextTree.value = [];
+            }
+        }
+
+        function closeAdvanceModal() {
+            advanceModalVisible.value = false;
+            advanceForm.value = { instanceId: '', currentState: '', contextJson: '' };
+            advanceContextTree.value = [];
+            advanceContextError.value = '';
+            advanceMergeText.value = '';
+            advanceMergeError.value = '';
+            advanceMergeSuccess.value = false;
+        }
+
+        function advanceSyncTreeToText() {
+            try {
+                advanceForm.value.contextJson = getTreeJson();
+            } catch (e) { /* ignore */ }
+        }
+
+        function advanceMergeJsonToTree() {
+            advanceMergeError.value = '';
+            advanceMergeSuccess.value = false;
+            if (!advanceMergeText.value.trim()) return;
+            try {
+                const mergeObj = JSON.parse(advanceMergeText.value);
+                const currentObj = JSON.parse(advanceForm.value.contextJson || '{}');
+                const merged = { ...currentObj, ...mergeObj };
+                advanceForm.value.contextJson = JSON.stringify(merged, null, 2);
+                advanceContextTree.value = parseJsonTree(merged);
+                advanceMergeSuccess.value = true;
+                advanceMergeText.value = '';
+            } catch (e) {
+                advanceMergeError.value = 'JSON 格式错误: ' + e.message;
+            }
+        }
+
+        async function confirmAdvance() {
+            let contextJson = null;
+            if (advanceContextMode.value === 'text') {
+                try {
+                    contextJson = JSON.stringify(JSON.parse(advanceForm.value.contextJson));
+                } catch (e) {
+                    advanceContextError.value = 'JSON 格式错误: ' + e.message;
+                    return;
+                }
+            } else {
+                try {
+                    contextJson = getTreeJson();
+                } catch (e) {
+                    advanceContextError.value = '树形数据格式错误: ' + e.message;
+                    return;
+                }
+            }
+            advanceContextError.value = '';
+            advanceLoading.value = true;
+            try {
+                const result = await API.advanceInstance(advanceForm.value.instanceId, contextJson);
+                if (result.success) {
+                    showToast('已推进执行');
+                    const savedInstanceId = advanceForm.value.instanceId;
+                    closeAdvanceModal();
+                    if (currentView.value === 'instance') {
+                        const detail = await API.getInstanceDetail(savedInstanceId);
+                        if (detail.instance) {
+                            instanceDetail.value = detail;
+                            await nextTick();
+                            const el = await waitForElement('#instance-mermaid');
+                            if (el) renderInstanceMermaid();
+                        }
+                    } else {
+                        await loadInstances();
+                    }
+                } else {
+                    showToast(result.message || '推进失败');
+                }
+            } catch (e) {
+                showToast('推进失败: ' + e.message);
+            } finally {
+                advanceLoading.value = false;
+            }
         }
 
         function closeDrawer() {
@@ -684,10 +810,11 @@ createApp({
             const vers = await API.getVersions(inst.machineName);
             if (!vers.length || !vers[0].transitions) return;
 
+            const snapshots = instanceDetail.value.snapshots || [];
             // Collect snapshot statuses per state, and build ordered state sequence
             const stateStatus = {};
             const stateHasSuccess = {};
-            instanceDetail.value.snapshots.forEach(s => {
+            snapshots.forEach(s => {
                 // Always track success
                 if (s.status === 'SUCCESS') stateHasSuccess[s.stateName] = true;
                 // State status: once red, stays red (unless later succeeded)
@@ -701,7 +828,7 @@ createApp({
             const traversedEdges = new Set();
             const uniqueStates = [];
             let lastState = null;
-            instanceDetail.value.snapshots.forEach(s => {
+            snapshots.forEach(s => {
                 if (s.stateName !== lastState) {
                     uniqueStates.push(s.stateName);
                     lastState = s.stateName;
@@ -834,14 +961,17 @@ createApp({
             relativeTime, formatTime, formatTimeShort,
             getMachineHealth, isMachineActive, goInstance,
             getStateType, getTransitionsFrom,
-            loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, loadMachineInstances,
+            loadMachines, loadMachineDetail, loadInstances, loadInstanceDetail, retryInstance, advanceInstance, loadMachineInstances,
             copyText,
             drawerVisible, drawerInstance, drawerSnapshots, snapshotIoExpanded, openDrawer, closeDrawer, toggleDrawerIo, isDrawerIoExpanded,
             toastMsg, toastVisible, showToast,
             resumeModalVisible, resumeForm, resumeLoading, resumeContextMode, resumeContextTree, resumeContextError,
             resumeMergeText, mergeError, mergeSuccess,
             openResumeModal, closeResumeModal, confirmResume, getTreeJson, syncTreeToText, onTreeNodeUpdate,
-            mergeJsonToTree
+            mergeJsonToTree,
+            advanceModalVisible, advanceForm, advanceLoading, advanceContextMode, advanceContextTree, advanceContextError,
+            advanceMergeText, advanceMergeError, advanceMergeSuccess,
+            closeAdvanceModal, confirmAdvance, advanceSyncTreeToText, advanceMergeJsonToTree
         };
     }
 }).mount('#app');

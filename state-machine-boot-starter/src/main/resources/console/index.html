@@ -338,6 +338,10 @@
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                     重试
                                 </button>
+                                <button v-if="instanceDetail.instance.status==='FAILED'" @click="advanceInstance(instanceDetail.instance.id)" class="btn btn-advance">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="12" x2="5" y2="12"/></svg>
+                                    推进
+                                </button>
                                 <button v-if="instanceDetail.instance.status==='SUSPENDED'" @click="openResumeModal(instanceDetail.instance.id, instanceDetail.instance.currentState)" class="btn btn-resume">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                     恢复
@@ -381,12 +385,61 @@
                     <div class="card timeline-full">
                         <div class="card-header">
                             <h2>执行快照</h2>
-                            <span class="snapshot-count">{{ instanceDetail.snapshots.length }} 步</span>
+                            <span class="snapshot-count">{{ (instanceDetail.snapshots || []).length }} 步</span>
                         </div>
                         <div class="timeline">
-                            <div v-for="(s, idx) in instanceDetail.snapshots" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE' }">
+                            <div v-for="(s, idx) in (instanceDetail.snapshots || [])" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE', 'advance-type': s.snapshotType === 'ADVANCE' }">
+                                <!-- ADVANCE snapshot: advance operation display -->
+                                <template v-if="s.snapshotType === 'ADVANCE'">
+                                    <div class="timeline-marker advance-marker">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="12" x2="5" y2="12"/></svg>
+                                    </div>
+                                    <div class="timeline-content" :class="{ 'has-error': s.errorMessage }">
+                                        <div class="timeline-header">
+                                            <span class="timeline-step advance-step">ADVANCE: {{ s.stateName }}</span>
+                                            <div class="timeline-meta">
+                                                <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                                <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
+                                            </div>
+                                        </div>
+                                        <div v-if="s.errorMessage" class="timeline-error-inline">{{ s.errorMessage }}</div>
+                                        <!-- IO 块 -->
+                                        <div class="timeline-io" v-if="s.input || s.output">
+                                            <div class="io-block" v-if="s.input">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'in')">
+                                                    <span class="io-label io-label--in">IN</span>
+                                                    <span class="io-summary">{{ jsonSummary(s.input) }}</span>
+                                                    <div class="io-actions">
+                                                        <button class="io-icon-btn" @click.stop="toggleSnapshotIo(s.id, 'in')" :class="{active: isSnapshotIoExpanded(s.id, 'in')}" title="展开/折叠">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                        </button>
+                                                        <button class="io-icon-btn" @click.stop="copyText(s.input)" title="复制">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <pre class="io-code-full" :class="{ 'io-collapsed': !isSnapshotIoExpanded(s.id, 'in') }">{{ isSnapshotIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
+                                            </div>
+                                            <div class="io-block" v-if="s.output">
+                                                <div class="io-header" @click.stop="toggleSnapshotIo(s.id, 'out')">
+                                                    <span class="io-label io-label--out">OUT</span>
+                                                    <span class="io-summary">{{ jsonSummary(s.output) }}</span>
+                                                    <div class="io-actions">
+                                                        <button class="io-icon-btn" @click.stop="toggleSnapshotIo(s.id, 'out')" :class="{active: isSnapshotIoExpanded(s.id, 'out')}" title="展开/折叠">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                        </button>
+                                                        <button class="io-icon-btn" @click.stop="copyText(s.output)" title="复制">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <pre class="io-code-full" :class="{ 'io-collapsed': !isSnapshotIoExpanded(s.id, 'out') }">{{ isSnapshotIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
                                 <!-- ROUTE snapshot: compact route display -->
-                                <template v-if="s.snapshotType === 'ROUTE'">
+                                <template v-else-if="s.snapshotType === 'ROUTE'">
                                     <div class="timeline-marker route-marker">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                     </div>
@@ -475,6 +528,10 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                             重试
                         </button>
+                        <button v-if="drawerInstance.status==='FAILED'" @click="advanceInstance(drawerInstance.id).then(() => openDrawer(drawerInstance.id))" class="btn btn-advance">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="12" x2="5" y2="12"/></svg>
+                            推进
+                        </button>
                         <button v-if="drawerInstance.status==='SUSPENDED'" @click="openResumeModal(drawerInstance.id, drawerInstance.currentState)" class="btn btn-resume">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                             恢复
@@ -519,9 +576,57 @@
                         <span class="snapshot-count">{{ drawerSnapshots.length }} 步</span>
                     </div>
                     <div class="timeline">
-                        <div v-for="(s, idx) in drawerSnapshots" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE' }">
+                        <div v-for="(s, idx) in drawerSnapshots" :key="s.id" class="timeline-item" :class="{ 'route-type': s.snapshotType === 'ROUTE', 'advance-type': s.snapshotType === 'ADVANCE' }">
+                            <!-- ADVANCE snapshot -->
+                            <template v-if="s.snapshotType === 'ADVANCE'">
+                                <div class="timeline-marker advance-marker">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polygon points="5 3 19 12 5 21 5 3"/><line x1="19" y1="12" x2="5" y2="12"/></svg>
+                                </div>
+                                <div class="timeline-content" :class="{ 'has-error': s.errorMessage }">
+                                    <div class="timeline-header">
+                                        <span class="timeline-step advance-step">ADVANCE: {{ s.stateName }}</span>
+                                        <div class="timeline-meta">
+                                            <span class="attempt-tag" v-if="s.attempt > 1">尝试 #{{ s.attempt }}</span>
+                                            <span class="timeline-time">{{ formatTimeShort(s.executedAt) }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-if="s.errorMessage" class="timeline-error-inline">{{ s.errorMessage }}</div>
+                                    <div class="timeline-io" v-if="s.input || s.output">
+                                        <div class="io-block" v-if="s.input">
+                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'in')">
+                                                <span class="io-label io-label--in">IN</span>
+                                                <span class="io-summary">{{ jsonSummary(s.input) }}</span>
+                                                <div class="io-actions">
+                                                    <button class="io-icon-btn" @click.stop="toggleDrawerIo(s.id, 'in')" :class="{active: isDrawerIoExpanded(s.id, 'in')}" title="展开/折叠">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                    </button>
+                                                    <button class="io-icon-btn" @click.stop="copyText(s.input)" title="复制">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <pre class="io-code-full" :class="{ 'io-collapsed': !isDrawerIoExpanded(s.id, 'in') }">{{ isDrawerIoExpanded(s.id, 'in') ? formatJson(s.input) : s.input }}</pre>
+                                        </div>
+                                        <div class="io-block" v-if="s.output">
+                                            <div class="io-header" @click.stop="toggleDrawerIo(s.id, 'out')">
+                                                <span class="io-label io-label--out">OUT</span>
+                                                <span class="io-summary">{{ jsonSummary(s.output) }}</span>
+                                                <div class="io-actions">
+                                                    <button class="io-icon-btn" @click.stop="toggleDrawerIo(s.id, 'out')" :class="{active: isDrawerIoExpanded(s.id, 'out')}" title="展开/折叠">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                                                    </button>
+                                                    <button class="io-icon-btn" @click.stop="copyText(s.output)" title="复制">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <pre class="io-code-full" :class="{ 'io-collapsed': !isDrawerIoExpanded(s.id, 'out') }">{{ isDrawerIoExpanded(s.id, 'out') ? formatJson(s.output) : s.output }}</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
                             <!-- ROUTE snapshot: compact route display -->
-                            <template v-if="s.snapshotType === 'ROUTE'">
+                            <template v-else-if="s.snapshotType === 'ROUTE'">
                                 <div class="timeline-marker route-marker">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                 </div>
@@ -606,11 +711,11 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label class="form-label">实例 ID</label>
-                    <div class="form-value mono">{{ resumeForm.instanceId }}</div>
+                    <div class="form-value mono">{{ resumeForm?.instanceId }}</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">当前状态（挂起点）</label>
-                    <div class="form-value mono">{{ resumeForm.currentState }}</div>
+                    <div class="form-value mono">{{ resumeForm?.currentState }}</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">预期状态</label>
@@ -650,6 +755,63 @@
                 <button class="btn btn-resume" @click="confirmResume" :disabled="resumeLoading">
                     <svg v-if="resumeLoading" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                     恢复执行
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advance Modal -->
+    <div class="modal-overlay" :class="{open: advanceModalVisible}" @click="closeAdvanceModal">
+        <div class="modal modal-resume" @click.stop>
+            <div class="modal-header">
+                <h2>推进失败实例</h2>
+                <button class="modal-close" @click="closeAdvanceModal">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">实例 ID</label>
+                    <div class="form-value mono">{{ advanceForm?.instanceId }}</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">失败状态</label>
+                    <div class="form-value mono">{{ advanceForm?.currentState }}</div>
+                </div>
+                <div class="form-group">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                        <label class="form-label" style="margin-bottom:0">Context（可编辑）</label>
+                        <div style="display:flex;gap:4px">
+                            <button class="btn btn-sm" :class="advanceContextMode==='tree'?'btn-primary':'btn-cancel'" @click="advanceContextMode='tree'" style="padding:3px 10px;font-size:0.7rem">树形</button>
+                            <button class="btn btn-sm" :class="advanceContextMode==='text'?'btn-primary':'btn-cancel'" @click="advanceSyncTreeToText(); advanceContextMode='text'" style="padding:3px 10px;font-size:0.7rem">文本</button>
+                        </div>
+                    </div>
+                    <!-- Text mode -->
+                    <textarea v-if="advanceContextMode==='text'" v-model="advanceForm.contextJson" class="form-input form-textarea" style="min-height:200px;font-family:var(--mono);font-size:0.8rem;resize:vertical"></textarea>
+                    <!-- Tree mode -->
+                    <div v-else class="context-tree">
+                        <template v-for="(node, idx) in advanceContextTree" :key="idx">
+                            <tree-node :node="node" :depth="0" @update:modelValue="onTreeNodeUpdate(idx, $event)"></tree-node>
+                        </template>
+                        <div v-if="!advanceContextTree.length" style="color:var(--gray-400);font-size:0.8rem;padding:12px;text-align:center">无参数</div>
+                    </div>
+                    <div v-if="advanceContextError" style="color:var(--red);font-size:0.75rem;margin-top:4px">{{ advanceContextError }}</div>
+                </div>
+                <div class="form-group" style="margin-top:8px">
+                    <label class="form-label">JSON 补充输入</label>
+                    <textarea v-model="advanceMergeText" class="form-input form-textarea" style="min-height:80px;font-size:0.8rem" placeholder='{"key": "value"}'></textarea>
+                    <div style="display:flex;gap:4px;margin-top:4px;align-items:center">
+                        <button class="btn btn-sm" @click="advanceMergeJsonToTree">合并到 Context</button>
+                        <span v-if="advanceMergeError" style="color:var(--red);font-size:0.75rem">{{ advanceMergeError }}</span>
+                        <span v-if="advanceMergeSuccess" style="color:var(--green);font-size:0.75rem">已合并</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" @click="closeAdvanceModal">取消</button>
+                <button class="btn btn-advance" @click="confirmAdvance" :disabled="advanceLoading">
+                    <svg v-if="advanceLoading" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    推进执行
                 </button>
             </div>
         </div>

@@ -585,6 +585,8 @@ a:hover { color: var(--primary-light); }
 .btn-retry:hover { background: var(--amber-light); }
 .btn-resume { background: var(--primary-bg); color: var(--primary); border: 1px solid var(--primary-light); }
 .btn-resume:hover { background: var(--primary-light); color: #fff; }
+.btn-advance { background: var(--green-bg); color: #065f46; border: 1px solid var(--green-light); }
+.btn-advance:hover { background: var(--green-light); }
 .btn-cancel { background: var(--gray-100); color: var(--gray-600); border: 1px solid var(--gray-200); }
 .btn-cancel:hover { background: var(--gray-200); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -785,6 +787,17 @@ a:hover { color: var(--primary-light); }
     color: var(--primary);
     margin: 0 6px;
     font-weight: 700;
+}
+
+/* ===== Advance-type Timeline Item ===== */
+.timeline-item.advance-type .timeline-marker.advance-marker {
+    background: var(--green-bg);
+    color: #065f46;
+    border: 1.5px solid var(--green-light);
+}
+.timeline-item.advance-type .timeline-step.advance-step {
+    font-weight: 600;
+    color: #065f46;
 }
 
 /* ===== Buttons ===== */

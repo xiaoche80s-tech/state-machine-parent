@@ -26,6 +26,7 @@ public class InstanceExecutionService<C> {
 
     private static final Logger log = LoggerFactory.getLogger(InstanceExecutionService.class);
     private static final String SNAPSHOT_TYPE_ROUTE = "ROUTE";
+    private static final String SNAPSHOT_TYPE_ADVANCE = "ADVANCE";
     private static final String UNKNOWN_VERSION = "unknown";
     private final InstanceRepository instanceRepo;
     private final SnapshotRepository snapshotRepo;
@@ -111,6 +112,70 @@ public class InstanceExecutionService<C> {
         }
 
         resetToRunningAndExecute(data, context, data.currentState().value(), machine);
+    }
+
+    /**
+     * 推进失败的实例：用新的 Action 替代原失败的 Action 执行
+     * 适用于 action 执行失败（非原子操作）后，业务数据已手动修复，需要用新 action 替代并继续流转的场景
+     *
+     * @param machine 状态机定义
+     * @param instanceId 实例 ID
+     * @param newAction 替代失败 action 的新 action
+     * @param contextMerger 用于调整恢复后上下文的合并函数
+     */
+    public void advance(StateMachine<C> machine, InstanceId instanceId,
+                        Action<C> newAction, Consumer<C> contextMerger) {
+        // 1. 校验实例状态
+        InstanceData data = requireInstance(instanceId);
+        if (data.status() != InstanceStatus.FAILED)
+            throw new StateMachineException("Can only advance FAILED instances, current status: " + data.status());
+
+        // 2. 从快照恢复上下文：取最后一个 SUCCESS 快照的 outputJson（排除 ROUTE 和 ADVANCE）
+        List<SnapshotData> snapshots = snapshotRepo.findByInstanceId(instanceId);
+        String contextJson = snapshots.stream()
+            .filter(s -> s.status() == ExecutionStatus.SUCCESS
+                && !SNAPSHOT_TYPE_ROUTE.equals(s.snapshotType())
+                && !SNAPSHOT_TYPE_ADVANCE.equals(s.snapshotType()))
+            .reduce((first, second) -> second)
+            .map(SnapshotData::outputJson)
+            .orElse("{}");
+        C context = deserialize(contextJson, machine);
+        contextMerger.accept(context);
+
+        // 3. CAS 重置实例状态为 RUNNING
+        int updated = instanceRepo.tryMarkRunningFromFailed(instanceId);
+        if (updated == 0)
+            throw new StateMachineException("Instance already advanced or not in FAILED status: " + instanceId);
+
+        // 4. 执行新 Action 并继续流转
+        data = requireInstance(instanceId);
+        String currentStateName = data.currentState().value();
+        State<C> currentState = machine.findState(currentStateName)
+            .orElseThrow(() -> new StateMachineException.StateNotFoundException(currentStateName));
+
+        // 执行 advance action（带重试）
+        data = executeAdvanceAction(data, currentState, newAction, context, machine);
+
+        // 5. 路由到下一状态并继续 executeLoop
+        Optional<String> nextState = machine.findNextState(context, currentStateName);
+        if (!nextState.isPresent()) {
+            if (machine.hasOutgoingTransitions(currentStateName)) {
+                failWithTransitionError(instanceId, currentStateName, context, machine);
+            }
+            instanceRepo.save(data.withUpdatedState(
+                StateName.of(currentStateName), InstanceStatus.COMPLETED, null));
+            return;
+        }
+
+        // 记录 ROUTE 快照
+        snapshotRepo.save(ExecutionSnapshot.createRoute(
+            SnapshotId.generate(), instanceId, StateName.of(currentStateName),
+            serialize(context), StateName.of(nextState.get())));
+
+        // 继续执行后续状态
+        instanceRepo.save(data.withUpdatedState(
+            StateName.of(nextState.get()), InstanceStatus.RUNNING, null));
+        executeLoop(instanceId, context, StateName.of(nextState.get()), machine);
     }
 
     /**
@@ -226,6 +291,50 @@ public class InstanceExecutionService<C> {
                 current = instanceRepo.save(current.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
                 throw new StateMachineException(
                     String.format("State '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
+            }
+        }
+    }
+
+    /**
+     * 执行 advance 操作的 Action，记录 ADVANCE 类型的快照
+     * 与 executeAction 逻辑一致，但使用调用方传入的 action，快照类型为 "ADVANCE"
+     */
+    private InstanceData executeAdvanceAction(InstanceData current, State<C> state,
+                                               Action<C> action, C context,
+                                               StateMachine<C> machine) {
+        String stateName = state.getName();
+        int maxAttempts = machine.getRetryPolicy().getMaxAttempts();
+
+        while (true) {
+            int attempt = current.retryCount() + 1;
+            String inputJson = serialize(context);
+            try {
+                action.execute(context);
+                snapshotRepo.save(ExecutionSnapshot.createAdvanceSuccess(
+                    SnapshotId.generate(), current.id(), StateName.of(stateName),
+                    inputJson, serialize(context), attempt));
+                return instanceRepo.save(current.withIncrementedRetry(0, null));
+            } catch (Exception e) {
+                log.error("[state-machine] ADVANCE 状态 '{}' 执行失败 (实例 {}, 第 {} 次尝试)", stateName, current.id(), attempt, e);
+                snapshotRepo.save(ExecutionSnapshot.createAdvanceFailed(
+                    SnapshotId.generate(), current.id(), StateName.of(stateName),
+                    inputJson, e.getMessage(), attempt));
+
+                int retryCount = current.retryCount();
+                if (retryCount < maxAttempts) {
+                    long delayMs = machine.getRetryPolicy().getDelayForAttempt(retryCount + 1);
+                    current = instanceRepo.save(current.withIncrementedRetry(retryCount + 1, Instant.now().plusMillis(delayMs)));
+                    try { Thread.sleep(delayMs); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new StateMachineException("Retry interrupted", ie);
+                    }
+                    continue;
+                }
+
+                log.error("[state-machine] ADVANCE 状态 '{}' 耗尽 {} 次重试 (实例 {})", stateName, retryCount + 1, current.id());
+                current = instanceRepo.save(current.withUpdatedState(StateName.of(stateName), InstanceStatus.FAILED, e.getMessage()));
+                throw new StateMachineException(
+                    String.format("ADVANCE state '%s' failed after %d attempts: %s", stateName, retryCount + 1, e.getMessage()), e);
             }
         }
     }

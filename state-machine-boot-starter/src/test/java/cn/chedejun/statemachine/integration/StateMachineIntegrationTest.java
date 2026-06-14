@@ -523,6 +523,84 @@ class StateMachineIntegrationTest {
         assertEquals("done", inst3.get().currentState().value());
     }
 
+    // ===== advance 功能 =====
+
+    @Test
+    @Order(70)
+    void advance_failedInstance_withNewAction_succeeds() {
+        // 1. 执行状态机，使其进入 FAILED 状态
+        TestContext ctx = new TestContext();
+        assertThrows(StateMachineException.class, () -> failingMachine.execute(ctx, "biz-advance-test"));
+
+        // 2. 获取失败的实例
+        Optional<InstanceData> failedOpt = instanceRepository.findByBusinessId(
+            MachineName.of("failing-machine"), BusinessId.of("biz-advance-test"));
+        assertTrue(failedOpt.isPresent());
+        InstanceData failedInstance = failedOpt.get();
+        assertEquals(InstanceStatus.FAILED, failedInstance.status());
+        assertEquals("will-fail", failedInstance.currentState().value());
+
+        // 3. 使用 advance 推进实例，用新 action 替代原失败的 action
+        failingMachine.advance(failedInstance.id().value(),
+            c -> c.setProcessed(true),  // 新的 action
+            c -> c.setValidated(true)); // context merger
+
+        // 4. 验证实例已完成
+        Optional<InstanceData> updated = instanceRepository.findById(InstanceId.of(failedInstance.id().value()));
+        assertTrue(updated.isPresent());
+        assertEquals(InstanceStatus.COMPLETED, updated.get().status());
+        assertEquals("done", updated.get().currentState().value());
+
+        // 5. 验证快照中包含 ADVANCE 类型
+        List<cn.chedejun.statemachine.domain.data.SnapshotData> snapshots = snapshotRepository.findByInstanceId(
+            InstanceId.of(failedInstance.id().value()));
+        assertTrue(snapshots.stream().anyMatch(s -> "ADVANCE".equals(s.snapshotType())));
+    }
+
+    @Test
+    @Order(71)
+    void advance_nonFailedInstance_throwsException() {
+        // 1. 创建一个正常完成的实例
+        TestContext ctx = new TestContext();
+        ExecuteResult result = testMachine.execute(ctx, "biz-advance-non-failed");
+        assertEquals("COMPLETED", result.status());
+
+        // 2. 尝试对非 FAILED 实例执行 advance，应抛出异常
+        assertThrows(StateMachineException.class, () ->
+            testMachine.advance(result.instanceId(), c -> {}, c -> {}));
+    }
+
+    @Test
+    @Order(72)
+    void advance_snapshotTypeIsADVANCE() {
+        // 1. 执行状态机，使其进入 FAILED 状态
+        TestContext ctx = new TestContext();
+        assertThrows(StateMachineException.class, () -> failingMachine.execute(ctx, "biz-advance-snapshot-type"));
+
+        // 2. 获取失败的实例
+        Optional<InstanceData> failedOpt = instanceRepository.findByBusinessId(
+            MachineName.of("failing-machine"), BusinessId.of("biz-advance-snapshot-type"));
+        assertTrue(failedOpt.isPresent());
+        InstanceData failedInstance = failedOpt.get();
+
+        // 3. 使用 advance 推进实例
+        failingMachine.advance(failedInstance.id().value(),
+            c -> c.setProcessed(true),
+            c -> c.setValidated(true));
+
+        // 4. 验证 ADVANCE 快照的字段
+        List<cn.chedejun.statemachine.domain.data.SnapshotData> snapshots = snapshotRepository.findByInstanceId(
+            InstanceId.of(failedInstance.id().value()));
+        Optional<cn.chedejun.statemachine.domain.data.SnapshotData> advanceSnap = snapshots.stream()
+            .filter(s -> "ADVANCE".equals(s.snapshotType()))
+            .findFirst();
+        assertTrue(advanceSnap.isPresent());
+        assertEquals("will-fail", advanceSnap.get().stateName().value());
+        assertEquals("SUCCESS", advanceSnap.get().status().name());
+        assertNotNull(advanceSnap.get().inputJson());
+        assertNotNull(advanceSnap.get().outputJson());
+    }
+
     // ===== 数据验证 =====
 
     @AfterEach

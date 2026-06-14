@@ -12,6 +12,7 @@
 - [DefinitionData.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/DefinitionData.java)
 - [InstanceData.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/InstanceData.java)
 - [SnapshotData.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/SnapshotData.java)
+- [ExecutionSnapshot.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/snapshot/ExecutionSnapshot.java)
 - [DefinitionId.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/DefinitionId.java)
 - [InstanceId.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/InstanceId.java)
 - [SnapshotId.java](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/SnapshotId.java)
@@ -39,6 +40,8 @@
 
 系统采用多数据库兼容设计，支持MySQL、PostgreSQL和H2数据库，并通过自动DDL初始化机制确保在不同环境中的正确部署。每个表都经过精心设计，平衡了数据完整性、查询性能和存储效率。
 
+**更新** 本次更新反映了快照表 `executed_at` 列的时间精度已提升至微秒级（TIMESTAMP(6)），增强了时间戳记录的精确性和兼容性。
+
 ## 项目结构
 
 状态机系统的数据库Schema位于以下关键位置：
@@ -60,7 +63,7 @@ subgraph "领域模型"
 DEF_DATA[DefinitionData<br/>定义数据对象]
 INST_DATA[InstanceData<br/>实例数据对象]
 SNAP_DATA[SnapshotData<br/>快照数据对象]
-end
+END
 MYSQL --> INIT
 PGSQL --> INIT
 H2 --> INIT
@@ -117,6 +120,7 @@ SNAP_REPO --> SNAP_DATA
 - **执行跟踪**：记录每次状态执行的输入、输出和错误信息
 - **执行状态**：包含成功和失败两种执行状态
 - **尝试次数**：支持多次尝试的跟踪和管理
+- **时间精度**：executed_at列现已支持微秒级时间戳精度（TIMESTAMP(6)）
 
 **章节来源**
 - [DefinitionData.java:8-46](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/DefinitionData.java#L8-L46)
@@ -226,6 +230,18 @@ class SnapshotData {
 -String snapshotType
 -Instant executedAt
 }
+class ExecutionSnapshot {
+-SnapshotId id
+-InstanceId instanceId
+-StateName stateName
+-String inputJson
+-String outputJson
+-ExecutionStatus status
+-String errorMessage
+-int attempt
+-String snapshotType
+-Instant executedAt
+}
 class DefinitionId {
 -String value
 +generate() DefinitionId
@@ -261,14 +277,17 @@ InstanceData --> DefinitionId : "关联"
 InstanceData --> InstanceId : "使用"
 SnapshotData --> InstanceId : "关联"
 SnapshotData --> SnapshotId : "使用"
+ExecutionSnapshot --> SnapshotId : "使用"
 InstanceData --> InstanceStatus : "包含"
 SnapshotData --> ExecutionStatus : "包含"
+ExecutionSnapshot --> ExecutionStatus : "包含"
 ```
 
 **图表来源**
 - [DefinitionData.java:8-46](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/DefinitionData.java#L8-L46)
 - [InstanceData.java:8-79](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/InstanceData.java#L8-L79)
 - [SnapshotData.java:8-56](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/data/SnapshotData.java#L8-L56)
+- [ExecutionSnapshot.java:10-100](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/snapshot/ExecutionSnapshot.java#L10-L100)
 - [DefinitionId.java:6-27](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/DefinitionId.java#L6-L27)
 - [InstanceId.java:6-27](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/InstanceId.java#L6-L27)
 - [SnapshotId.java:6-27](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/domain/shared/SnapshotId.java#L6-L27)
@@ -313,7 +332,7 @@ VARCHAR status
 TEXT error_message
 INT attempt
 VARCHAR snapshot_type
-TIMESTAMP executed_at
+TIMESTAMP(6) executed_at
 }
 STATE_MACHINE_INSTANCES ||--|| STATE_MACHINE_DEFINITIONS : "定义ID关联"
 STATE_MACHINE_SNAPSHOTS ||--|| STATE_MACHINE_INSTANCES : "实例ID关联"
@@ -368,7 +387,9 @@ STATE_MACHINE_SNAPSHOTS ||--|| STATE_MACHINE_INSTANCES : "实例ID关联"
 | error_message | TEXT | 可空 | 错误信息 | 故障诊断支持 |
 | attempt | INT | 默认1 | 尝试次数 | 重试历史追踪 |
 | snapshot_type | VARCHAR(16) | 非空，默认NODE | 快照类型 | 执行节点分类 |
-| executed_at | TIMESTAMP | 默认值 | 执行时间 | 时间序列追踪 |
+| executed_at | TIMESTAMP(6) | 默认值 | 执行时间 | 微秒级时间戳精度 |
+
+**更新** 快照表的 `executed_at` 列现已支持微秒级时间精度（TIMESTAMP(6)），提升了时间戳记录的精确性，特别适用于高频执行场景和精确的时间序列分析。
 
 **章节来源**
 - [mysql.sql:1-19](file://state-machine-boot-starter/src/main/resources/ddl/mysql.sql#L1-L19)
@@ -410,7 +431,8 @@ Start([开始初始化]) --> DetectDB["检测数据库类型"]
 DetectDB --> LoadSQL["加载对应DDL脚本"]
 LoadSQL --> ExecDDL["执行DDL语句"]
 ExecDDL --> CreateTables["创建三张核心表"]
-CreateTables --> InitComplete([初始化完成])
+CreateTables --> MigrateTS["执行时间精度迁移"]
+MigrateTS --> InitComplete([初始化完成])
 DetectDB --> |MySQL| LoadMySQL["加载mysql.sql"]
 DetectDB --> |PostgreSQL| LoadPG["加载postgresql.sql"]
 DetectDB --> |其他| LoadH2["加载h2.sql"]
@@ -421,11 +443,37 @@ LoadH2 --> ExecDDL
 
 **图表来源**
 - [DdlInitializer.java:22-45](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L22-L45)
+- [DdlInitializer.java:72-93](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L72-L93)
+
+#### 时间精度迁移机制
+
+**新增** 系统现在包含专门的时间精度迁移机制，用于将现有快照表的 `executed_at` 列从标准时间戳提升至微秒级精度：
+
+```mermaid
+sequenceDiagram
+participant Init as DdlInitializer
+participant Template as JdbcTemplate
+participant MySQL as MySQL
+participant PG as PostgreSQL
+participant H2 as H2
+Init->>Template : 检测数据库类型
+Template-->>Init : 返回数据库类型
+Init->>MySQL : ALTER TABLE ... MODIFY COLUMN executed_at TIMESTAMP(6)
+Init->>PG : ALTER TABLE ... ALTER COLUMN executed_at TYPE TIMESTAMP(6)
+Init->>H2 : ALTER TABLE ... ALTER COLUMN executed_at TIMESTAMP(6)
+MySQL-->>Init : 迁移完成
+PG-->>Init : 迁移完成
+H2-->>Init : 迁移完成
+```
+
+**图表来源**
+- [DdlInitializer.java:72-93](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L72-L93)
 
 **章节来源**
 - [JdbcDefinitionRepository.java:83-106](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/infrastructure/persistence/JdbcDefinitionRepository.java#L83-L106)
 - [JdbcSnapshotRepository.java:63-83](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/infrastructure/persistence/JdbcSnapshotRepository.java#L63-L83)
 - [DdlInitializer.java:22-45](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L22-L45)
+- [DdlInitializer.java:72-93](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L72-L93)
 
 ## 依赖分析
 
@@ -437,7 +485,7 @@ subgraph "外部系统"
 SPRING[Spring Framework]
 JDBC[JDBC驱动]
 JACKSON[Jackson JSON]
-end
+END
 subgraph "内部模块"
 INIT[DdlInitializer]
 DEF_REPO[JdbcDefinitionRepository]
@@ -524,17 +572,24 @@ subgraph "查询场景"
 S1[按实例ID查询]
 S2[按状态过滤]
 S3[时间序列查询]
+S4[微秒级时间精度查询]
 end
 subgraph "推荐索引"
 J1[instance_id索引]
 J2[state_name索引]
 J3[status索引]
 J4[executed_at索引]
+J5[instance_id+executed_at组合索引]
 end
 S1 --> J1
 S2 --> J3
 S3 --> J4
+S4 --> J4
+S1 --> J5
+S4 --> J5
 ```
+
+**更新** 由于 `executed_at` 列现在支持微秒级精度，建议在时间序列查询场景中充分利用这一精度优势，特别是在高频执行和精确时间分析的应用场景中。
 
 ### 分区考虑
 
@@ -570,6 +625,7 @@ Archive --> Cleanup[定期清理]
 2. **合理使用LIMIT**：控制返回结果集大小
 3. **索引覆盖查询**：确保常用查询走索引
 4. **批量操作**：减少网络往返次数
+5. **利用微秒精度**：在时间序列查询中充分利用TIMESTAMP(6)的精度优势
 
 #### 存储优化
 
@@ -618,10 +674,26 @@ Archive --> Cleanup[定期清理]
 **解决方案**：
 系统已实现原子化upsert操作，通过DuplicateKeyException处理并发冲突。如果遇到问题，检查事务配置和锁机制。
 
+#### 时间精度迁移失败
+
+**问题症状**：快照表的 `executed_at` 列未达到微秒级精度
+
+**可能原因**：
+1. 数据库类型不支持TIMESTAMP(6)语法
+2. 权限不足无法修改表结构
+3. 表结构已被其他进程锁定
+
+**解决步骤**：
+1. 检查数据库版本是否支持微秒级时间戳
+2. 验证数据库用户具有ALTER权限
+3. 确认表结构未被其他进程锁定
+4. 查看迁移日志中的具体错误信息
+
 **章节来源**
 - [DdlInitializer.java:41-44](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L41-L44)
 - [JdbcDefinitionRepository.java:83-106](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/infrastructure/persistence/JdbcDefinitionRepository.java#L83-L106)
 - [JdbcInstanceRepository.java:65-87](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/infrastructure/persistence/JdbcInstanceRepository.java#L65-L87)
+- [DdlInitializer.java:72-93](file://state-machine-boot-starter/src/main/java/cn/chedejun/statemachine/persistence/DdlInitializer.java#L72-L93)
 
 ## 结论
 
@@ -632,6 +704,9 @@ Archive --> Cleanup[定期清理]
 3. **清晰的表关系**：通过外键约束维护数据一致性，支持完整的生命周期管理
 4. **性能优化考虑**：合理的字段设计和索引策略，支持高并发场景
 5. **可扩展性设计**：模块化的架构便于功能扩展和维护
+6. **精确的时间记录**：新增的微秒级时间戳精度提升了时间序列分析的准确性
+
+**更新** 新增的时间精度迁移机制确保了现有系统的平滑升级，同时保持了向后兼容性。微秒级精度的引入特别适用于高频执行场景和需要精确时间测量的应用。
 
 该设计为状态机系统的稳定运行提供了坚实的数据基础，能够满足生产环境的各种需求。
 
@@ -662,3 +737,4 @@ Verify --> Complete[迁移完成]
 2. **监控告警**：实施数据库性能和可用性监控
 3. **容量规划**：根据业务增长预测数据库容量需求
 4. **安全加固**：实施数据库访问控制和数据加密
+5. **时间精度利用**：在高频执行和精确时间分析场景中充分利用微秒级精度优势
